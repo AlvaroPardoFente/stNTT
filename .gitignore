@@ -63,7 +63,7 @@
 *.fatbin
 
 # Linux executables
-testFFT/build
+build
 
 # VSCode
 .vscode
