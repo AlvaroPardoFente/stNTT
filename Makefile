@@ -21,7 +21,7 @@ GENCODE_FLAGS ?= --gpu-architecture=native
 # Debug build flags
 # -g is --debug, -G is --device-debug, -Xptxas passes options to the PTX assembler
 ifeq ($(DEBUG),1)
-        NVCCFLAGS += -DDEBUG -g -src-in-ptx -keep -keep-dir $(BUILD_DIR) -Xptxas -O0,-v
+        NVCCFLAGS += -DDEBUG -g -G -src-in-ptx -keep -keep-dir $(BUILD_DIR) -Xptxas -O0,-v
         CCFLAGS += -Wall -Og -rdynamic
         BUILD_TYPE := debug
 $(info DEBUG configuration enabled)
