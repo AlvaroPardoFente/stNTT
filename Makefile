@@ -7,7 +7,7 @@ NVCC          ?= nvcc
 
 # Compiler/linker flags
 # MD is --generate-dependencies-with-compile
-NVCCFLAGS   ?= --std c++20 -MD
+NVCCFLAGS   ?= -std=c++20 -MD
 CCFLAGS     ?=
 LDFLAGS     ?=
 
@@ -47,8 +47,8 @@ NVCCARGS := -ccbin $(HOST_COMPILER) $(NVCCFLAGS) $(if $(CCFLAGS),-Xcompiler $(su
 # Get versions from git and build env, embed important compiler flags
 VERFLAGS := -DVERSION='"$(shell git describe --dirty --broken --always --tags)"' -DCOMPILEOPTS='"$(NVCCARGS)"' -DCOMPILEVER='"$(shell $(HOST_COMPILER) --version | head -n1), $(shell $(NVCC) --version | head -n5 | tail -n1)"'
 
-# FFT
-SRCS := ntt/cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cpp
+# NTT
+SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cu
 # Tests
 # SRCS += tests/tests.cpp tests/benchmarks.cpp
 # Util
@@ -56,14 +56,15 @@ SRCS := ntt/cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cpp
 # Main
 SRCS += main.cpp
 
+.PHONY: all clean run ptx
+# Default, make executable target
+all: $(BUILD_DIR)/$(TARGET)
+
 # Objects
 OBJS := $(addprefix $(BUILD_DIR)/, $(SRCS:%=%.o))
 
 # Dependency files
 -include $(OBJS:%.o=%.d)
-
-# Default, make executable target
-all: $(BUILD_DIR)/$(TARGET)
 
 # Final executable build
 $(BUILD_DIR)/$(TARGET): $(OBJS)
@@ -85,4 +86,4 @@ run:: $(BUILD_DIR)/$(TARGET)
 
 # Clean build files
 clean::
-		rm -r $(BUILD_DIR)
+		rm -rf $(BUILD_DIR)
