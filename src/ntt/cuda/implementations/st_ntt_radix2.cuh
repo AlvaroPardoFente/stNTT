@@ -6,8 +6,9 @@
 #define MAX_TWIDDLES 1024
 __constant__ void *const_twiddles[MAX_TWIDDLES * sizeof(int)];
 
-template <uint n, uint lN>
-__global__ static void stNttRadix2(int *__restrict__ vec, int mod) {
+template <uint n>
+__global__ void stNttRadix2(int *__restrict__ vec, int mod) {
+    constexpr uint lN = log2_constexpr(n);
     constexpr uint N2 = (n >> 1);  // nthreads per NTT
     constexpr uint N4 = (n >> 2);
 

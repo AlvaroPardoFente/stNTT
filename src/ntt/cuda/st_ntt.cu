@@ -9,12 +9,12 @@
 using nttkernel = void (*)(int *vec, int mod);
 
 std::map<uint, nttkernel> radix2{
-    {2, stNttRadix2<2, 1>},
-    {4, stNttRadix2<4, 2>},
-    {8, stNttRadix2<8, 3>},
-    {16, stNttRadix2<16, 4>},
-    {32, stNttRadix2<32, 5>},
-    {64, stNttRadix2<64, 6>},
+    {2, stNttRadix2<2>},
+    {4, stNttRadix2<4>},
+    {8, stNttRadix2<8>},
+    {16, stNttRadix2<16>},
+    {32, stNttRadix2<32>},
+    {64, stNttRadix2<64>},
     // {128, stNttRadix2<128, 7>},
 };
 
@@ -53,7 +53,7 @@ float stNtt(std::span<int> vec, int size, int root, int mod, int batches, Radix 
     nttkernel kernel;
 
     // radix2
-    kernel = radix2[n];
+    kernel = radix2.at(n);
     dimBlock = dim3(n2, std::min(blockSize / n2, batches));
     dimGrid = dim3((n2 * batches + blockSize - 1) / blockSize);
 

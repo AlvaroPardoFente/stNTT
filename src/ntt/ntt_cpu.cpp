@@ -22,7 +22,7 @@ void nttCt(std::vector<int> &vec, int root, int mod) {
         pow_table.push_back(temp);
         temp = (temp * root) % mod;
     }
-    bit_reverse_vector(pow_table);
+    bitReverseVector(pow_table);
 
     for (int size = n; size >= 2; size /= 2) {
         int halfsize = size / 2;
@@ -148,7 +148,7 @@ void inttGs(std::vector<int> &vec, int root, int mod) {
     {
         pow_table.push_back(pow(root, -i, mod));
     }
-    bit_reverse_vector(pow_table);
+    bitReverseVector(pow_table);
 
     for (int size = 2; size <= n; size *= 2) {
         int halfsize = size / 2;
@@ -176,7 +176,7 @@ void pwcNtt(std::vector<int> &vec0, std::vector<int> &vec1, int root, int mod) {
     nttCt(vec0, root, mod);
     nttCt(vec1, root, mod);
 
-    elem_wise_mul(std::span{vec0}, std::span{vec1}, mod);
+    elemWiseMul(std::span{vec0}, std::span{vec1}, mod);
 
     inttGs(vec0, root, mod);
 }
