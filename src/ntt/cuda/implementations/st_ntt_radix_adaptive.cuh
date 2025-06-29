@@ -2,9 +2,7 @@
 
 #include "ntt/cuda/cu_util.cuh"
 #include "ntt/cuda/cu_ntt_util.cuh"
-
-#define MAX_TWIDDLES 1024
-__constant__ void *const_twiddles[MAX_TWIDDLES * sizeof(int)];
+#include "ntt/cuda/implementations/common.cuh"
 
 template <uint n, uint radix>
 __global__ void stNttRadixAdaptive(int *__restrict__ vec, int mod) {

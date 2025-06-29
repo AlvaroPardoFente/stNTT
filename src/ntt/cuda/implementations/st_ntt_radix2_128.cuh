@@ -2,11 +2,9 @@
 
 #include "ntt/cuda/cu_util.cuh"
 #include "ntt/cuda/cu_ntt_util.cuh"
+#include "ntt/cuda/implementations/common.cuh"
 
-#define MAX_TWIDDLES 1024
-__constant__ void *const_twiddles[MAX_TWIDDLES * sizeof(int)];
-
-__global__ void ntt_radix2_128(int *__restrict__ vec, int mod) {
+__global__ void stNttRadix2_128(int *__restrict__ vec, int mod) {
     // 2 buffers for the first shfl (w0 sends 2nd half to w1, w1 sends 1st half to w0)
     // One int for each thread
     extern __shared__ int firstShfl[];
@@ -14,9 +12,9 @@ __global__ void ntt_radix2_128(int *__restrict__ vec, int mod) {
     constexpr uint n = 128;  // Number of elements in the vector
     constexpr uint lN = 7;   // log2(N)
 
-    uint idxInWarp = threadIdx.x & (warpSize - 1);                          // 0-31
-    uint widx = ((blockDim.x * threadIdx.y + threadIdx.x) / warpSize) % 2;  // 0 for w0, 1 for w1
-    uint wmask = !(widx & 1);                                               // 1 for w0, 0 for w1;
+    uint idxInWarp = threadIdx.x & (warpSize - 1);  // 0-31
+    uint widx = (threadIdx.x / warpSize) % 2;       // 0 for w0, 1 for w1
+    uint wmask = !(widx & 1);                       // 1 for w0, 0 for w1;
     int dPos = (blockIdx.x * n * blockDim.y) + threadIdx.x + (threadIdx.y << lN);
     int *twiddles = (int *)const_twiddles;
     int reg[2];
