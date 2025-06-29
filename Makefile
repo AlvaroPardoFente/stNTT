@@ -22,7 +22,7 @@ GENCODE_FLAGS ?= --gpu-architecture=native
 # -g is --debug, -G is --device-debug, -Xptxas passes options to the PTX assembler
 ifeq ($(DEBUG),1)
         NVCCFLAGS += -DDEBUG -g -G -src-in-ptx -keep -keep-dir $(BUILD_DIR) -Xptxas -O0,-v
-        CCFLAGS += -Wall -Og -rdynamic
+        CCFLAGS += -Wall -O0 -rdynamic
         BUILD_TYPE := debug
 $(info DEBUG configuration enabled)
 else
@@ -33,11 +33,12 @@ endif
 
 # Project directories
 SRC_DIR := src
+THIRD_PARTY_DIR := third_party
 BUILD_DIR ?= build
 TARGET := stNTT
 
 # External includes and libraries
-INCLUDES  := -I$(SRC_DIR)
+INCLUDES  := -I$(SRC_DIR) -I$(THIRD_PARTY_DIR)
 LIBRARIES := 
 
 # Force host compiler with -ccbin, and add flags for nvcc
@@ -56,12 +57,15 @@ SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cu
 # Main
 SRCS += main.cpp
 
-.PHONY: all clean run ptx
+TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cpp
+
+.PHONY: all clean run test ptx
 # Default, make executable target
 all: $(BUILD_DIR)/$(TARGET)
 
 # Objects
 OBJS := $(addprefix $(BUILD_DIR)/, $(SRCS:%=%.o))
+TEST_OBJS := $(addprefix $(BUILD_DIR)/, $(TEST_SRCS:%=%.o))
 
 # Dependency files
 -include $(OBJS:%.o=%.d)
@@ -74,6 +78,14 @@ $(BUILD_DIR)/$(TARGET): $(OBJS)
 $(OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%
 		mkdir -p $(dir $@)
 		$(EXEC) $(NVCC) $(INCLUDES) $(NVCCARGS) $(GENCODE_FLAGS) $(VERFLAGS) -o $@ -c $<
+
+test: $(BUILD_DIR)/test
+	./$(BUILD_DIR)/test
+
+# Build test executable
+$(BUILD_DIR)/test: $(TEST_SRCS) $(filter-out $(BUILD_DIR)/main.cpp.o,$(OBJS))
+	mkdir -p $(BUILD_DIR)
+	$(EXEC) $(NVCC) $(NVCCARGS) $(GENCODE_FLAGS) $(INCLUDES) -o $@ $^
 
 # Extract PTX for debug
 ptx:: $(OBJS:%.cu.o=%.ptx)
