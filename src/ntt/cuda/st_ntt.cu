@@ -1,6 +1,9 @@
 #include "st_ntt.h"
 
 #include "ntt/cuda/implementations/st_ntt_radix2.cuh"
+#include "ntt/cuda/implementations/st_ntt_radix2_128.cuh"
+#include "ntt/cuda/implementations/st_ntt_radix2_512.cuh"
+#include "ntt/cuda/implementations/st_ntt_radix2_adaptive.cuh"
 
 #include <cuda_profiler_api.h>
 
@@ -14,26 +17,26 @@ std::map<uint, nttkernel> radix2{
     {8, stNttRadix2<8>},
     {16, stNttRadix2<16>},
     {32, stNttRadix2<32>},
-    {64, stNttRadix2<64>},
-    // {128, stNttRadix2<128, 7>},
+    {64, stNttRadix2Adaptive<64>},
+    {128, stNttRadix2_128},
+    {256, stNttRadix2Adaptive<256>},
+    {512, stNttRadix2Adaptive<512>},
+    {1024, stNttRadix2Adaptive<1024>},
+    {2048, stNttRadix2Adaptive<2048>},
 };
 
 float stNtt(std::span<int> vec, int size, int root, int mod, int batches, Radix radix) {
-    int memsize = vec.size() * sizeof(int);
-    int *vecGPU;
-
     float gpuTime;
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
 
-    CCErr(cudaMalloc(&vecGPU, memsize));
-    CCErr(cudaMemcpy(vecGPU, vec.data(), memsize, cudaMemcpyHostToDevice));
+    cuda::Buffer vecGPU(vec);
 
     int *host_twiddles;
     CCErr(cudaMallocHost(&host_twiddles, size * sizeof(int)));
     int temp = 1;
-    for (size_t i = 0; i < size / 2; ++i) {
+    for (int i = 0; i < size / 2; ++i) {
         host_twiddles[i] = temp;
         temp = (temp * root) % mod;
     }
@@ -41,7 +44,7 @@ float stNtt(std::span<int> vec, int size, int root, int mod, int batches, Radix 
     CCErr(cudaMemcpyToSymbol(const_twiddles, host_twiddles, size / 2 * sizeof(int)));
 
     // Higher blockSize, bigger bottleneck on register usage per SM
-    constexpr int blockSize = 512;
+    constexpr int blockSize = 1024;
     int n = size;
     int n2 = n >> 1;
     int n4 = n >> 2;
@@ -59,18 +62,17 @@ float stNtt(std::span<int> vec, int size, int root, int mod, int batches, Radix 
 
     cudaProfilerStart();
     cudaEventRecord(start);
-    kernel<<<dimGrid, dimBlock>>>(vecGPU, mod);
+    kernel<<<dimGrid, dimBlock, dimBlock.x * dimBlock.y * sizeof(int)>>>(vecGPU.data(), mod);
     CCErr(cudaGetLastError());
-    cudaEventRecord(end);
+    CCErr(cudaEventRecord(end));
 
-    cudaProfilerStop();
-    cudaEventSynchronize(end);
-    cudaEventElapsedTime(&gpuTime, start, end);
+    CCErr(cudaProfilerStop());
+    CCErr(cudaEventSynchronize(end));
+    CCErr(cudaEventElapsedTime(&gpuTime, start, end));
 
     CCErr(cudaDeviceSynchronize());
 
-    CCErr(cudaMemcpy(vec.data(), vecGPU, memsize, cudaMemcpyDeviceToHost));
-    CCErr(cudaFree(vecGPU));
+    vecGPU.store(vec);
     CCErr(cudaFreeHost(host_twiddles));
 
     return gpuTime;

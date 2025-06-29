@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdio>
+#include <span>
+#include <stdexcept>
 
 // Prints the error, description, file and line if a CUDA error occurs.
 #define CCErr(val) checkPrintErr((val), #val, __FILE__, __LINE__)
@@ -48,3 +50,53 @@ void checkPrintErr(T result, char const *const func, const char *const file, int
         printf(__VA_ARGS__); \
     }                        \
     __syncthreads();
+
+namespace cuda {
+// GPU buffer wrapper for simple cases
+template <typename T>
+struct Buffer {
+    Buffer(std::span<T> span) {
+        this->load(span);
+    }
+
+    ~Buffer() {
+        if (this->data() != nullptr) {
+            CCErr(cudaFree(this->data()));
+        }
+    }
+
+    void alloc(size_t size) {
+        if (size < 1ul)
+            throw std::invalid_argument("Size mut be grater than zero");
+        this->size_ = size;
+        CCErr(cudaMalloc(&data_, this->bytes()));
+    }
+
+    void load(std::span<T> span) {
+        this->alloc(span.size());
+        CCErr(cudaMemcpy(this->data(), span.data(), this->bytes(), cudaMemcpyHostToDevice));
+    }
+
+    void store(std::span<T> span) {
+        if (span.size_bytes() < this->bytes())
+            throw std::out_of_range("Host buffer is smaller than device buffer");
+        CCErr(cudaMemcpy(span.data(), this->data(), this->bytes(), cudaMemcpyDeviceToHost));
+    }
+
+    T *data() {
+        return data_;
+    }
+
+    size_t size() {
+        return size_;
+    }
+
+    size_t bytes() {
+        return this->size() * sizeof(T);
+    }
+
+private:
+    T *data_{};
+    size_t size_{};
+};
+}  // namespace cuda

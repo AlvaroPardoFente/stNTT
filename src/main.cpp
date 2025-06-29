@@ -2,25 +2,17 @@
 #include "ntt/ntt_util.h"
 #include "ntt/cuda/st_ntt.h"
 #include "util/io.h"
+#include "util/rng.h"
 
 #include <iostream>
 #include <vector>
 #include <random>
-
-const int seed = 42;
-std::mt19937 rng(seed);
-std::uniform_int_distribution<int> dist(0, 9);
 
 int minMod = 11;
 size_t vecSize = 32;
 size_t batches = 1;
 
 int main() {
-    std::vector<int> vec;
-    std::vector<int> cpuRes;
-    std::vector<int> gpuRes;
-    double gpuTime;
-
     const char *vecSizeEnv = std::getenv("VEC_SIZE");
     const char *batchesEnv = std::getenv("NUM_BATCHES");
 
@@ -29,11 +21,11 @@ int main() {
     if (batchesEnv != nullptr)
         batches = std::stoi(batchesEnv);
 
-    // Default vector init
-    for (size_t i = 0; i < vecSize * batches; i++)
-        vec.push_back(dist(rng));
-    cpuRes = vec;
-    gpuRes = vec;
+    util::Rng rng(util::Rng::defaultSeed);
+    std::vector<int> vec = rng.get_vector(vecSize * batches);
+    std::vector<int> cpuRes = vec;
+    std::vector<int> gpuRes = vec;
+    double gpuTime;
 
     auto [root, mod] = findParams(vecSize, minMod);
 
@@ -41,7 +33,14 @@ int main() {
     nttStockham(cpuRes.data(), vecSize, root, mod, batches);
 
     // GPU
-    gpuTime = stNtt(gpuRes, vecSize, root, mod, batches, Radix::Radix2);
+    try {
+        gpuTime = stNtt(gpuRes, vecSize, root, mod, batches, Radix::Radix2);
+    } catch (const std::out_of_range &e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "This may be due to an unsupported vector size or root/mod combination.\n";
+        return 1;
+    }
+    // gpuTime += 1;
 
     if (cpuRes != gpuRes) {
         std::cout << "ERROR: cpu result != gpu result\n";
