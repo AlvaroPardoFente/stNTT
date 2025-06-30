@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <span>
 #include <stdexcept>
+#include <cuda_runtime.h>
 
 // Prints the error, description, file and line if a CUDA error occurs.
 #define CCErr(val) checkPrintErr((val), #val, __FILE__, __LINE__)
@@ -52,6 +53,13 @@ void checkPrintErr(T result, char const *const func, const char *const file, int
     __syncthreads();
 
 namespace cuda {
+template <typename T>
+__device__ __forceinline__ void swap(T &a, T &b) {
+    T temp = a;
+    a = b;
+    b = temp;
+}
+
 // GPU buffer wrapper for simple cases
 template <typename T>
 struct Buffer {

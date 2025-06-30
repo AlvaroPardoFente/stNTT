@@ -4,6 +4,7 @@
 #include "ntt/cuda/implementations/st_ntt_radix2_128.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix2_512.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix2_adaptive.cuh"
+#include "ntt/cuda/implementations/st_ntt_radix4_adaptive.cuh"
 
 #include <cuda_profiler_api.h>
 
@@ -20,7 +21,7 @@ std::map<uint, nttkernel> radix2{
     {64, stNttRadix2Adaptive<64>},
     {128, stNttRadix2_128},
     {256, stNttRadix2Adaptive<256>},
-    {512, stNttRadix2Adaptive<512>},
+    {512, stNttRadix4Adaptive<512>},
     {1024, stNttRadix2Adaptive<1024>},
     {2048, stNttRadix2Adaptive<2048>},
 };
@@ -59,10 +60,12 @@ float stNtt(std::span<int> vec, int size, int root, int mod, int batches, Radix 
     kernel = radix2.at(n);
     dimBlock = dim3(n2, std::min(blockSize / n2, batches));
     dimGrid = dim3((n2 * batches + blockSize - 1) / blockSize);
+    // int sharedMem = lN > 6 ? dimBlock.x * dimBlock.y * sizeof(int) : 0; // radix 2
+    int sharedMem = lN > 7 ? dimBlock.x * dimBlock.y * sizeof(int) * 2 : 0;  // radix 4
 
     cudaProfilerStart();
     cudaEventRecord(start);
-    kernel<<<dimGrid, dimBlock, dimBlock.x * dimBlock.y * sizeof(int)>>>(vecGPU.data(), mod);
+    kernel<<<dimGrid, dimBlock, sharedMem>>>(vecGPU.data(), mod);
     CCErr(cudaGetLastError());
     CCErr(cudaEventRecord(end));
 
