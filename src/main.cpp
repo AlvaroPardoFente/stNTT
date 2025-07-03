@@ -1,6 +1,6 @@
 #include "ntt/ntt_cpu.h"
 #include "ntt/ntt_util.h"
-#include "ntt/cuda/st_ntt.h"
+#include "ntt/cuda/ntt_kernel.h"
 #include "util/io.h"
 #include "util/rng.h"
 
@@ -13,6 +13,9 @@ size_t vecSize = 32;
 size_t batches = 1;
 
 int main() {
+    auto kernels = cuda::KernelMap();
+    cuda::registerAllKernels(kernels, std::span(cuda::defaultBatchesNums));
+
     const char *vecSizeEnv = std::getenv("VEC_SIZE");
     const char *batchesEnv = std::getenv("NUM_BATCHES");
 
@@ -34,7 +37,7 @@ int main() {
 
     // GPU
     try {
-        gpuTime = stNtt(gpuRes, vecSize, root, mod, batches, Radix::Radix2);
+        gpuTime = cuda::stNtt(kernels, gpuRes, vecSize, batches, ntt::KernelId::stNttRadix2, root, mod);
     } catch (const std::out_of_range &e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::cerr << "This may be due to an unsupported vector size or root/mod combination.\n";

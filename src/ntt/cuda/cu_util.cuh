@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <cuda_runtime.h>
 
+constexpr uint warpSizeConst = 32;
+
 // Prints the error, description, file and line if a CUDA error occurs.
 #define CCErr(val) checkPrintErr((val), #val, __FILE__, __LINE__)
 
@@ -36,7 +38,7 @@ void checkPrintErr(T result, char const *const func, const char *const file, int
 
 // Printf synchronized ordered by threadIdx, including threadId header
 #define printfth(...)                                                                            \
-    for (int threadID = 0; threadID < blockDim.x * blockDim.y; threadID++) {                     \
+    for (int threadID = 0; threadID < gridDim.x * blockDim.x * blockDim.y; threadID++) {         \
         int global_thread_id = blockIdx.x * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x; \
         if (threadID == global_thread_id) {                                                      \
             printf("(%02d)[%02d,%02d] ", blockIdx.x, threadIdx.x, threadIdx.y);                  \

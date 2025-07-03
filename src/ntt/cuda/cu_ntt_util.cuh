@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ntt/cuda/cu_util.cuh"
+
 __forceinline__ __device__ int modulo(int x, int mod);
 __device__ __forceinline__ unsigned int log2_uint(unsigned int x);
 __host__ __device__ constexpr uint log2_constexpr(uint x);
@@ -20,6 +22,13 @@ __forceinline__ __device__ int modulo(int x, int mod) {
 
 __forceinline__ __device__ unsigned int log2_uint(unsigned int x) {
     return 31 - __clz(x);
+}
+
+__host__ __device__ __forceinline__ uint log2(uint x) {
+    uint res = 0;
+    while (x >>= 1)
+        ++res;
+    return res;
 }
 
 __host__ __device__ constexpr uint log2_constexpr(uint x) {
@@ -58,3 +67,18 @@ __device__ __forceinline__ void butterflyRadix4(int2 *data, int2 twiddle, int mo
     data[0].y = modulo(data[0].y + data[1].y, mod);
     data[1].y = modulo(t.y * twiddle.y, mod);
 }
+
+namespace cuda {
+constexpr uint defaultBlockSize = 1024;
+
+using KernelArgs = std::tuple<dim3, dim3, uint>;
+__forceinline__ KernelArgs getNttKernelArgs(uint n, uint radix, uint batches, uint blockSize = cuda::defaultBlockSize) {
+    dim3 dimGrid{((n / radix) * batches + blockSize - 1) / blockSize};
+    dim3 dimBlock{std::min(n / radix, blockSize), std::max(std::min(blockSize / (n / radix), batches), 1u)};
+
+    uint stepsInWarp = log2(warpSizeConst * radix);
+    uint sharedMem = (log2(n) > stepsInWarp) ? std::min((n / 2), blockSize) * dimBlock.y * sizeof(int) : 0;
+
+    return {dimGrid, dimBlock, sharedMem};
+}
+}  // namespace cuda
