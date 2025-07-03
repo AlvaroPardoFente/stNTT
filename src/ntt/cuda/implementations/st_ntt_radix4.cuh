@@ -5,7 +5,7 @@
 #include "ntt/cuda/implementations/common.cuh"
 
 template <uint n>
-__global__ void ntt_stockham_radix4(int *__restrict__ vec, int mod) {
+__global__ void stNttRadix4(int *__restrict__ vec, int mod) {
     constexpr uint lN = log2_constexpr(n);
     constexpr uint N2 = (n >> 1);  // número de threads por FFT
     constexpr uint N4 = (n >> 2);
