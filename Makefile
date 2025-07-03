@@ -49,7 +49,7 @@ NVCCARGS := -ccbin $(HOST_COMPILER) $(NVCCFLAGS) $(if $(CCFLAGS),-Xcompiler $(su
 VERFLAGS := -DVERSION='"$(shell git describe --dirty --broken --always --tags)"' -DCOMPILEOPTS='"$(NVCCARGS)"' -DCOMPILEVER='"$(shell $(HOST_COMPILER) --version | head -n1), $(shell $(NVCC) --version | head -n5 | tail -n1)"'
 
 # NTT
-SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cu
+SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/ntt_kernel.cu
 # Tests
 # SRCS += tests/tests.cpp tests/benchmarks.cpp
 # Util
@@ -57,7 +57,7 @@ SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/st_ntt.cu
 # Main
 SRCS += main.cpp
 
-TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cpp
+TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cu
 
 .PHONY: all clean run test ptx
 # Default, make executable target
@@ -81,6 +81,8 @@ $(OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%
 
 test: $(BUILD_DIR)/test
 	./$(BUILD_DIR)/test
+
+test-build: $(BUILD_DIR)/test
 
 # Build test executable
 $(BUILD_DIR)/test: $(TEST_SRCS) $(filter-out $(BUILD_DIR)/main.cpp.o,$(OBJS))
