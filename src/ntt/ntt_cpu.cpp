@@ -4,7 +4,6 @@
 
 #include <stdexcept>
 #include <algorithm>
-#include "ntt_cpu.h"
 
 // In-place implementation of the cooley-tukey NTT (NO->BO)
 void nttCt(std::vector<int> &vec, int root, int mod) {
