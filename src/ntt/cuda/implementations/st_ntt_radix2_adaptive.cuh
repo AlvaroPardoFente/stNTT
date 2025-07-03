@@ -63,19 +63,23 @@ __global__ void stNttRadix2Adaptive(int *__restrict__ vec, int mod) {
         }
     }
 
+    uint wgidx = (N2 * threadIdx.y & (warpSize - 1));  // Group index in warp
+    uint gmask = ~(0xffffffff << N2) << wgidx;
+
     int shfl_reg[4];
     // Shfl steps
     for (uint step = lastSharedStep + 1; step < lN; step++) {
-        uint threadvirtual = (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1));
+        uint threadvirtual =
+            (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1)) + wgidx;
         uint threadvirtual2 = threadvirtual + (n >> 2);
         uint swapidx = (idxVirtual & mask) != 0;
 
-        __syncwarp();
+        __syncwarp(gmask);
 
-        shfl_reg[0] = __shfl_sync(0xffffffff, reg[0], (threadvirtual >> lastSharedStep));
-        shfl_reg[1] = __shfl_sync(0xffffffff, reg[1], (threadvirtual >> lastSharedStep));
-        shfl_reg[2] = __shfl_sync(0xffffffff, reg[0], (threadvirtual2 >> lastSharedStep));
-        shfl_reg[3] = __shfl_sync(0xffffffff, reg[1], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[0] = __shfl_sync(gmask, reg[0], (threadvirtual >> lastSharedStep));
+        shfl_reg[1] = __shfl_sync(gmask, reg[1], (threadvirtual >> lastSharedStep));
+        shfl_reg[2] = __shfl_sync(gmask, reg[0], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[3] = __shfl_sync(gmask, reg[1], (threadvirtual2 >> lastSharedStep));
 
         reg[0] = shfl_reg[swapidx];
         reg[1] = shfl_reg[swapidx + 2];
