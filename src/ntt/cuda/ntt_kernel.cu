@@ -4,7 +4,6 @@
 
 #include "ntt/cuda/implementations/st_ntt_radix2.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix4.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix4_alt.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix2_128.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix2_512.cuh"
 #include "ntt/cuda/implementations/st_ntt_radix2_adaptive.cuh"
