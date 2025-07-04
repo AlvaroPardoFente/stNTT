@@ -45,9 +45,9 @@ TEST_CASE("radix2_global_4096") {
     auto [root, mod] = findParams(n, minMod);
 
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector(n * 1);
+    std::vector<int> vec = rng.get_vector(n * cuda::defaultBatchesNums.back());
 
-    for (const auto batches : {1}) {
+    for (const auto batches : cuda::defaultBatchesNums) {
         std::vector<int> cpuRes(vec.begin(), vec.begin() + n * batches);
         std::vector<int> gpuRes(vec.begin(), vec.begin() + n * batches);
         auto [dimGrid, dimBlock, sharedMem] = cuda::getNttKernelArgs(n, 2, batches);

@@ -23,8 +23,9 @@ __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
     int reg[2];
 
     // All warp arithmetic is needed here to calculate the first offsets if step > 0
-    uint idxInWarp = threadIdx.x & (warpSize - 1);                                 // 0-31
-    uint widx = ((blockDim.x * threadIdx.y + threadIdx.x) / warpSize) % numWarps;  // Warp index in the block
+    uint idxInWarp = threadIdx.x & (warpSize - 1);  // 0-31
+    uint widx = ((blockIdx.x * blockDim.x + (blockDim.x * threadIdx.y + threadIdx.x)) / warpSize) %
+                numWarps;  // Warp index in the NTT
 
     uint offset = 0;
     for (uint i = 1; i <= step; i++) {
@@ -33,78 +34,76 @@ __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
     }
 
     uint warpStride = numWarps >> step;
-#define threadStride (warpStride * warpSize)
+#define threadStride (warpStride * warpSizeConst)
     uint wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
     int dPos = ((blockIdx.x >> 1) * n) + idxVirtual;
 
-    printfth("idxVirtual=%u, dPos=%u\n", idxVirtual, dPos);
-
     // The last virtual index in the shared memory steps is used in the warp shfl steps
     idxVirtual = ((idxVirtual << step) & (N2 - 1)) + offset;
 
-    reg[0] = vec[dPos + !wmask * threadStride];
-    reg[1] = vec[dPos + !wmask * threadStride * (-1)];
+    reg[0] = vec[dPos + wmask * (int)threadStride * (-1)];
+    reg[1] = vec[dPos + !wmask * (int)threadStride];
 
     // First butterfly
-    // butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+    butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
-    // int mask = 1, cont = 0;
+    int mask = 1, cont = 0;
 
-    // if constexpr (lastSharedStep > 0) {
-    //     // Shared memory steps
-    //     for (; step <= lastSharedStep; step++) {
-    //         warpStride = numWarps >> step;
-    //         wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
+    if constexpr (lastSharedStep > 0) {
+        // Shared memory steps
+        for (step++; step <= lastSharedStep; step++) {
+            warpStride = numWarps >> step;
+            wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
-    //         firstShfls[blockDim.x * threadIdx.y + threadIdx.x] = reg[!wmask];
+            firstShfls[blockDim.x * threadIdx.y + threadIdx.x] = reg[!wmask];
 
-    //         __syncthreads();
+            __syncthreads();
 
-    //         uint woffset = wmask ? threadIdx.x + threadIdx.y * blockDim.x - threadStride
-    //                              : threadIdx.x + threadIdx.y * blockDim.x + threadStride;
-    //         reg[!wmask] = firstShfls[woffset];
+            uint woffset = wmask ? threadIdx.x + threadIdx.y * blockDim.x - threadStride
+                                 : threadIdx.x + threadIdx.y * blockDim.x + threadStride;
+            reg[!wmask] = firstShfls[woffset];
 
-    //         offset += wmask * mask;
-    //         idxVirtual = ((threadIdx.x << step) % blockDim.x) + offset;
+            offset += wmask * mask;
+            idxVirtual = ((idxVirtual << step) & (N2 - 1)) + offset;
 
-    //         butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+            butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
-    //         mask = mask << 1;
-    //         cont++;
-    //     }
-    // }
+            mask = mask << 1;
+            cont++;
+        }
+    }
 
-    // uint wgidx = (N2 * threadIdx.y & (warpSize - 1));  // Group index in warp
-    // uint gmask = ~(0xffffffff << N2) << wgidx;
+    uint wgidx = (N2 * threadIdx.y & (warpSize - 1));  // Group index in warp
+    uint gmask = ~(0xffffffff << N2) << wgidx;
 
-    // int shfl_reg[4];
-    // // Shfl steps
-    // for (uint step = lastSharedStep + 1; step < lN; step++) {
-    //     uint threadvirtual =
-    //         (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1)) + wgidx;
-    //     uint threadvirtual2 = threadvirtual + (n >> 2);
-    //     uint swapidx = (idxVirtual & mask) != 0;
+    int shfl_reg[4];
+    // Shfl steps
+    for (uint step = lastSharedStep + 1; step < lN; step++) {
+        uint threadvirtual =
+            (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1)) + wgidx;
+        uint threadvirtual2 = threadvirtual + (n >> 2);
+        uint swapidx = (idxVirtual & mask) != 0;
 
-    //     __syncwarp(gmask);
+        __syncwarp(gmask);
 
-    //     shfl_reg[0] = __shfl_sync(gmask, reg[0], (threadvirtual >> lastSharedStep));
-    //     shfl_reg[1] = __shfl_sync(gmask, reg[1], (threadvirtual >> lastSharedStep));
-    //     shfl_reg[2] = __shfl_sync(gmask, reg[0], (threadvirtual2 >> lastSharedStep));
-    //     shfl_reg[3] = __shfl_sync(gmask, reg[1], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[0] = __shfl_sync(gmask, reg[0], (threadvirtual >> lastSharedStep));
+        shfl_reg[1] = __shfl_sync(gmask, reg[1], (threadvirtual >> lastSharedStep));
+        shfl_reg[2] = __shfl_sync(gmask, reg[0], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[3] = __shfl_sync(gmask, reg[1], (threadvirtual2 >> lastSharedStep));
 
-    //     reg[0] = shfl_reg[swapidx];
-    //     reg[1] = shfl_reg[swapidx + 2];
+        reg[0] = shfl_reg[swapidx];
+        reg[1] = shfl_reg[swapidx + 2];
 
-    //     butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
-    //     mask = mask << 1;
-    //     cont++;
-    // }
+        mask = mask << 1;
+        cont++;
+    }
 
-    // // dPos is calculated again to account for the interleaving done in the first stage
-    // dPos = (blockIdx.x * n * blockDim.y) + idxVirtual + (threadIdx.y << lN);
+    // dPos is calculated again to account for the interleaving done in the first stage
+    dPos = ((blockIdx.x >> 1) * n) + idxVirtual;
 
-    // vec[dPos] = reg[0];
-    // vec[dPos + (n >> 1)] = reg[1];
+    vec[dPos] = reg[0];
+    vec[dPos + (n >> 1)] = reg[1];
 }
