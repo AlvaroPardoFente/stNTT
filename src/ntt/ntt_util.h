@@ -9,12 +9,13 @@ std::tuple<int, int> findParams(size_t size, int min_mod);
 int findModulus(int veclength, int min);
 int findPrimitiveRoot(int degree, int totient, int mod);
 int findGenerator(int totient, int mod);
-bool isPrimitiveRoot(int val, int degree, int mod);
+bool isPrimitiveRoot(size_t val, size_t degree, size_t mod);
 
 std::vector<int> uniquePrimeFactors(int n);
 bool isPrime(int n);
 int sqrt(int n);
-int pow(int base, int exponent, int mod);
+template <std::integral I>
+I pow(I base, I exponent, I mod);
 int modulo(int x, int mod);
 
 // Performs in-place element-wise multiplication of two sequences
@@ -55,4 +56,31 @@ template <typename T>
 std::vector<T> &bitReverseVector(std::vector<T> &vec) {
     size_t levels = std::bit_width(vec.size()) - 1;
     return bitReverseVector(vec, levels);
+}
+
+// Basic int modular power
+template <std::integral I>
+I pow(I base, I exponent, I mod) {
+    if (exponent < 0) {
+        // Compute modular multiplicative inverse of base modulo mod
+        I inverse = 1, b = base, m = mod - 2;  // Using Fermat's Little Theorem: base^(mod-2) = base^(-1) (mod mod)
+        while (m > 0) {
+            if (m % 2 == 1)
+                inverse = (inverse * b) % mod;
+            b = (b * b) % mod;
+            m /= 2;
+        }
+        base = inverse;
+        exponent = -exponent;
+    }
+
+    I result = 1;
+    base %= mod;
+    while (exponent > 0) {
+        if (exponent % 2 == 1)
+            result = (result * base) % mod;
+        base = (base * base) % mod;
+        exponent /= 2;
+    }
+    return result;
 }

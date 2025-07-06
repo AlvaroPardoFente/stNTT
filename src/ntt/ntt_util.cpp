@@ -3,6 +3,7 @@
 #include <ranges>
 #include <algorithm>
 #include <stdexcept>
+#include <concepts>
 
 std::tuple<int, int> findParams(size_t size, int min_mod) {
     int mod = findModulus(size, min_mod);
@@ -36,7 +37,7 @@ int findGenerator(int totient, int mod) {
     return *res;
 }
 
-bool isPrimitiveRoot(int val, int degree, int mod) {
+bool isPrimitiveRoot(size_t val, size_t degree, size_t mod) {
     std::vector<int> prime_factors = uniquePrimeFactors(degree);
     return pow(val, degree, mod) == 1 &&
            std::ranges::all_of(prime_factors, [val, degree, mod](int p) { return pow(val, degree / p, mod) != 1; });
@@ -79,32 +80,6 @@ int sqrt(int n) {
         if ((result + i) * (result + i) <= n)
             result += i;
 
-    return result;
-}
-
-// Basic int modular power
-int pow(int base, int exponent, int mod) {
-    if (exponent < 0) {
-        // Compute modular multiplicative inverse of base modulo mod
-        int inverse = 1, b = base, m = mod - 2;  // Using Fermat's Little Theorem: base^(mod-2) = base^(-1) (mod mod)
-        while (m > 0) {
-            if (m % 2 == 1)
-                inverse = (inverse * b) % mod;
-            b = (b * b) % mod;
-            m /= 2;
-        }
-        base = inverse;
-        exponent = -exponent;
-    }
-
-    int result = 1;
-    base %= mod;
-    while (exponent > 0) {
-        if (exponent % 2 == 1)
-            result = (result * base) % mod;
-        base = (base * base) % mod;
-        exponent /= 2;
-    }
     return result;
 }
 

@@ -4,6 +4,8 @@
 
 #include <stdexcept>
 #include <algorithm>
+#include <numeric>
+#include "ntt_cpu.h"
 
 // In-place implementation of the cooley-tukey NTT (NO->BO)
 void nttCt(std::vector<int> &vec, int root, int mod) {
@@ -41,11 +43,10 @@ void nttCt(std::vector<int> &vec, int root, int mod) {
 
 // In place implementation of the ntt using the DIF stockham algorithm (NO->NO)
 // https://doi.org/10.1109/TCSII.2019.2917621 pg. 2
-#ifndef PRINT_STEPS
-void nttStockham(int *vec, int size, int root, int mod) {
+void nttStockham(int *vec, int size, int root, int mod, std::optional<int> nsteps) {
     size_t n = size;
-    int levels = std::bit_width(n) - 1;
-    if (1 << levels != n)
+    int steps = std::bit_width(n) - 1;
+    if (1 << steps != n)
         throw std::invalid_argument("size must be a power of 2");
 
     std::vector<int> y_vector(n, 0);
@@ -60,7 +61,9 @@ void nttStockham(int *vec, int size, int root, int mod) {
         temp = (temp * root) % mod;
     }
 
-    for (int i = 0; i < levels; i++) {
+    if (nsteps)
+        steps = *nsteps;
+    for (int i = 0; i < steps; i++) {
         int J = pow(2, i, mod);
         for (int s = 0; s < n / (2 * J); s++) {
             int w = pow_table[J * s];
@@ -80,69 +83,59 @@ void nttStockham(int *vec, int size, int root, int mod) {
         std::copy(y, y + n, vec);
     }
 }
-#else
-void nttStockham(std::vector<int> &vec, int root, int mod) {
-    size_t n = vec.size();
-    int levels = std::bit_width(n) - 1;
-    if (1 << levels != n)
-        throw std::invalid_argument("vec.size() must be a power of 2");
 
-    std::vector<int> y(n, 0);
+void nttStockham(std::span<int> vec, int size, int root, int mod, int batches, std::optional<int> nsteps) {
+    for (size_t i = 0; i < batches; ++i)
+        nttStockham(vec.data() + i * size, size, root, mod, nsteps);
+}
 
-    // Holds w(root)^0, w^1, w^2 ... w^(n/2)
-    std::vector<int> pow_table;
-    int temp = 1;
-    for (size_t i = 0; i < n / 2; ++i) {
-        pow_table.push_back(temp);
-        temp = (temp * root) % mod;
-    }
+void nttStockhamIdx(int *vec, int size, int root, int mod, std::optional<int> nsteps) {
+    size_t n = size;
+    int steps = std::bit_width(n) - 1;
+    if (1 << steps != n)
+        throw std::invalid_argument("size must be a power of 2");
 
-    for (int i = 0; i < levels; i++) {
-        std::cout << "********** PASO " << i << " **********\n";
+    std::vector<int> y_vector(n, 0);
+    int *y = y_vector.data();
+    bool swap = false;
+
+    if (nsteps)
+        steps = *nsteps;
+    for (int i = 0; i < steps; i++) {
         int J = pow(2, i, mod);
-        std::cout << "J = " << J << "\n\n";
         for (int s = 0; s < n / (2 * J); s++) {
-            int w = pow_table[J * s];
             for (int j = 0; j < J; ++j) {
-                size_t left_idx = s * J + j;
-                size_t right_idx = s * J + j + n / 2;
-                int left = vec[left_idx];
-                int right = vec[right_idx];
-                size_t y_left_idx = 2 * s * J + j;
-                size_t y_right_idx = (2 * s + 1) * J + j;
-                y[y_left_idx] = modulo(left + right, mod);
-                y[y_right_idx] = modulo(w * modulo(left - right, mod), mod);
-                std::cout << "J = " << J << ", s = " << s << ", j = " << j << ", j*s = " << j * s << ", w = " << w
-                          << "\n";
-                std::cout << "y[" << y_left_idx << "] = "
-                          << "v[" << left_idx << "](" << left << ") + "
-                          << "v[" << right_idx << "](" << right << ") = " << y[y_left_idx] << "\n";
-                std::cout << "y[" << y_right_idx << "] = "
-                          << "w[" << J * s << "](" << w << ") * ("
-                          << "v[" << left_idx << "](" << left << ") - "
-                          << "v[" << right_idx << "](" << right << ")) = " << y[y_right_idx] << "\n\n";
+                int left = vec[s * J + j];
+                int right = vec[s * J + j + n / 2];
+                y[2 * s * J + j] = left;
+                y[(2 * s + 1) * J + j] = right;
             }
         }
         std::swap(vec, y);
+        swap = !swap;
+    }
+
+    if (swap) {
+        std::swap(vec, y);
+        std::copy(y, y + n, vec);
     }
 }
-#endif
 
-void nttStockham(int *vec, int size, int root, int mod, int batches) {
+void nttStockhamIdx(std::span<int> vec, int size, int root, int mod, int batches, std::optional<int> nsteps) {
     for (size_t i = 0; i < batches; ++i)
-        nttStockham(vec + i * size, size, root, mod);
+        nttStockhamIdx(vec.data() + i * size, size, root, mod, nsteps);
 }
 
 // In-place implementation of the Gentleman-Sande NTT (BO->NO)
 void inttGs(std::vector<int> &vec, int root, int mod) {
-    size_t n = vec.size();
+    unsigned int n = vec.size();
     size_t levels = std::bit_width(n) - 1;
     if (1 << levels != n)
         throw std::invalid_argument("vec.size() must be a power of 2");
 
     // https://arxiv.org/pdf/2211.13546 pg. 28
     std::vector<int> pow_table;
-    for (size_t i = 0; i < n / 2; ++i)
+    for (int i = 0; i < n / 2; ++i)
     // TODO: Faster implementation
     {
         pow_table.push_back(pow(root, -i, mod));
@@ -165,7 +158,7 @@ void inttGs(std::vector<int> &vec, int root, int mod) {
         }
     }
 
-    int scaler = pow(n, -1, mod);  // Could be fetched early from the pow_table
+    int scaler = pow(static_cast<int>(n), -1, mod);  // Could be fetched early from the pow_table
     for (int &x : vec)
         x = (x * scaler) % mod;
 }
