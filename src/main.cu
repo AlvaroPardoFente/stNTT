@@ -1,6 +1,7 @@
 #include "ntt/ntt_cpu.h"
 #include "ntt/ntt_util.h"
-#include "ntt/cuda/ntt_kernel.h"
+#include "ntt/cuda/ntt_kernel.cuh"
+#include "ntt/cuda/cu_ntt_util.cuh"
 #include "util/io.h"
 #include "util/rng.h"
 
@@ -13,8 +14,8 @@ size_t vecSize = 32;
 size_t batches = 1;
 
 int main() {
-    auto kernels = cuda::KernelMap();
-    cuda::registerAllKernels(kernels, std::span(cuda::defaultBatchesNums));
+    // auto kernels = cuda::KernelMap();
+    // cuda::registerAllKernels(kernels, std::span(cuda::defaultBatchesNums));
 
     const char *vecSizeEnv = std::getenv("VEC_SIZE");
     const char *batchesEnv = std::getenv("NUM_BATCHES");
@@ -25,7 +26,11 @@ int main() {
         batches = std::stoi(batchesEnv);
 
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector(vecSize * batches);
+    // std::vector<int> vec = rng.get_vector(vecSize * batches);
+    std::vector<int> vec(vecSize * batches);
+    std::iota(vec.begin(), vec.begin() + vecSize, 0);
+    for (int i = 1; i < batches; i++)
+        std::copy(vec.begin(), vec.begin() + vecSize, vec.begin() + i * vecSize);
     std::vector<int> cpuRes = vec;
     std::vector<int> gpuRes = vec;
     double gpuTime;
@@ -33,11 +38,22 @@ int main() {
     auto [root, mod] = findParams(vecSize, minMod);
 
     // CPU
-    nttStockham(cpuRes.data(), vecSize, root, mod, batches);
+    nttStockhamIdx(cpuRes, vecSize, root, mod, batches);
 
     // GPU
     try {
-        gpuTime = cuda::stNtt(kernels, gpuRes, vecSize, batches, ntt::KernelId::stNttRadix2, root, mod);
+        cuda::NttArgs args(gpuRes, vecSize, batches, root, mod, 2);
+        auto k = [args](cuda::Buffer<int> &vec, cuda::Buffer<int> &doubleBuffer) {
+            sttNttGlobalRadix2<8192, EmptyButterfly>(
+                vec,
+                doubleBuffer,
+                args.batches,
+                args.mod,
+                args.dimGrid,
+                args.dimBlock,
+                args.sharedMem);
+        };
+        gpuTime = cuda::ntt(k, args);
     } catch (const std::out_of_range &e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::cerr << "This may be due to an unsupported vector size or root/mod combination.\n";
@@ -50,6 +66,7 @@ int main() {
         std::cout << "INPUT:\n" << vec << "\n";
         std::cout << "CPU:\n" << cpuRes << "\n";
         std::cout << "GPU:\n" << gpuRes << "\n";
+        reportDifferences(cpuRes, gpuRes);
     } else
         std::cout << "SUCCESS\n";
 

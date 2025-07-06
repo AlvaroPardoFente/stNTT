@@ -49,13 +49,13 @@ NVCCARGS := -ccbin $(HOST_COMPILER) $(NVCCFLAGS) $(if $(CCFLAGS),-Xcompiler $(su
 VERFLAGS := -DVERSION='"$(shell git describe --dirty --broken --always --tags)"' -DCOMPILEOPTS='"$(NVCCARGS)"' -DCOMPILEVER='"$(shell $(HOST_COMPILER) --version | head -n1), $(shell $(NVCC) --version | head -n5 | tail -n1)"'
 
 # NTT
-SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp ntt/cuda/ntt_kernel.cu
+SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp
 # Tests
 # SRCS += tests/tests.cpp tests/benchmarks.cpp
 # Util
 # SRCS += util/cudahelpers.cu util/debug.cpp util/signals.cpp util/consolehelpers.cpp
 # Main
-SRCS += main.cpp
+SRCS += main.cu
 
 TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cu
 
@@ -85,7 +85,7 @@ test: $(BUILD_DIR)/test
 test-build: $(BUILD_DIR)/test
 
 # Build test executable
-$(BUILD_DIR)/test: $(TEST_SRCS) $(filter-out $(BUILD_DIR)/main.cpp.o,$(OBJS))
+$(BUILD_DIR)/test: $(TEST_SRCS) $(filter-out $(BUILD_DIR)/main.cu.o,$(OBJS))
 	mkdir -p $(BUILD_DIR)
 	$(EXEC) $(NVCC) $(NVCCARGS) $(GENCODE_FLAGS) $(INCLUDES) -o $@ $^
 
