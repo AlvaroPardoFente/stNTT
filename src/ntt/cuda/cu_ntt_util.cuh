@@ -2,17 +2,20 @@
 
 #include "ntt/cuda/cu_util.cuh"
 
-__forceinline__ __device__ int modulo(int x, int mod);
-__device__ __forceinline__ unsigned int log2_uint(unsigned int x);
+__device__ __forceinline__ int modulo(int x, int mod);
+__host__ __device__ __forceinline__ unsigned int log2_uint(unsigned int x);
 __host__ __device__ constexpr uint log2_constexpr(uint x);
 
-__forceinline__ __device__ void butterfly(int *data, int twiddle, int mod);
-__forceinline__ __device__ void butterflyRadix2x2(int2 *data, int twiddle, int mod);
-__forceinline__ __device__ void butterflyRadix4(int2 *data, int2 twiddle, int mod);
+struct Radix2Butterfly {};
+struct EmptyButterfly {};
+template <typename ButterflyConfig = Radix2Butterfly>
+__device__ __forceinline__ void butterfly(int *data, int twiddle, int mod);
+__device__ __forceinline__ void butterflyRadix2x2(int2 *data, int twiddle, int mod);
+__device__ __forceinline__ void butterflyRadix4(int2 *data, int2 twiddle, int mod);
 
 // IMPLEMENTATION
 
-__forceinline__ __device__ int modulo(int x, int mod) {
+__device__ __forceinline__ int modulo(int x, int mod) {
     int result = x % mod;
     if (result >= 0)
         return result;
@@ -20,8 +23,12 @@ __forceinline__ __device__ int modulo(int x, int mod) {
         return result + mod;
 }
 
-__forceinline__ __device__ unsigned int log2_uint(unsigned int x) {
+__host__ __device__ __forceinline__ unsigned int log2_uint(unsigned int x) {
+#if defined(__CUDA_ARCH__)
     return 31 - __clz(x);
+#else
+    return 31 - __builtin_clz(x);
+#endif
 }
 
 __host__ __device__ __forceinline__ uint log2(uint x) {
@@ -35,7 +42,8 @@ __host__ __device__ constexpr uint log2_constexpr(uint x) {
     return (x <= 1) ? 0 : 1 + log2_constexpr(x >> 1);
 }
 
-__device__ __forceinline__ void butterfly(int *data, int twiddle, int mod) {
+template <>
+__device__ __forceinline__ void butterfly<Radix2Butterfly>(int *data, int twiddle, int mod) {
     int t;
 
     t = modulo(data[0] - data[1], mod);
@@ -43,6 +51,9 @@ __device__ __forceinline__ void butterfly(int *data, int twiddle, int mod) {
     data[0] = modulo(data[0] + data[1], mod);
     data[1] = modulo(t * twiddle, mod);
 }
+
+template <>
+__device__ __forceinline__ void butterfly<EmptyButterfly>(int *data, int twiddle, int mod) {}
 
 __device__ __forceinline__ void butterflyRadix2x2(int2 *data, int twiddle, int mod) {
     int2 t;
@@ -72,7 +83,8 @@ namespace cuda {
 constexpr uint defaultBlockSize = 1024;
 
 using KernelArgs = std::tuple<dim3, dim3, uint>;
-__forceinline__ KernelArgs getNttKernelArgs(uint n, uint radix, uint batches, uint blockSize = cuda::defaultBlockSize) {
+__host__ __forceinline__ KernelArgs
+getNttKernelArgs(uint n, uint radix, uint batches, uint blockSize = cuda::defaultBlockSize) {
     dim3 dimGrid{((n / radix) * batches + blockSize - 1) / blockSize};
     dim3 dimBlock{std::min(n / radix, blockSize), std::max(std::min(blockSize / (n / radix), batches), 1u)};
 
