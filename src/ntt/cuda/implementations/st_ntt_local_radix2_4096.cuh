@@ -1,9 +1,8 @@
-#pragma once
-
 #include "ntt/cuda/cu_util.cuh"
 #include "ntt/cuda/cu_ntt_util.cuh"
 #include "ntt/cuda/implementations/common.cuh"
 
+template <typename ButterflyConfig = Radix2Butterfly>
 __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
     extern __shared__ int firstShfls[];
 
@@ -17,7 +16,7 @@ __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
     constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
 
-    uint idxVirtual = (blockIdx.x & 1) * blockDim.x + threadIdx.x;
+    uint idxInGroup = (blockIdx.x & 1) * blockDim.x + threadIdx.x;
 
     int *twiddles = (int *)const_twiddles;
     int reg[2];
@@ -29,26 +28,27 @@ __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
 
     uint offset = 0;
     for (uint i = 1; i <= step; i++) {
-        if ((widx / (numWarps >> i)) % 2)
-            offset += 1 << i;
+        if (widx / (1 << (logNumWarps - i)))
+            offset += 1 << (i - 1);
     }
+    // uint offset = (widx >> (logNumWarps - step)) & ((1u << step) - 1);
 
     uint warpStride = numWarps >> step;
-#define threadStride (warpStride * warpSizeConst)
+#define threadStrideRadix2_4096 (warpStride * warpSizeConst)
     uint wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
-    int dPos = ((blockIdx.x >> 1) * n) + idxVirtual;
+    int dPos = (((blockIdx.x >> 1) * n) + idxInGroup) << 1;
 
     // The last virtual index in the shared memory steps is used in the warp shfl steps
-    idxVirtual = ((idxVirtual << step) & (N2 - 1)) + offset;
+    uint idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
 
-    reg[0] = vec[dPos + wmask * (int)threadStride * (-1)];
-    reg[1] = vec[dPos + !wmask * (int)threadStride];
+    reg[0] = vec[dPos + wmask * (1 + (int)threadStrideRadix2_4096 * 2 * (-1))];
+    reg[1] = vec[dPos + wmask + !wmask * (int)threadStrideRadix2_4096 * 2];
 
     // First butterfly
-    butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+    butterfly<ButterflyConfig>(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
-    int mask = 1, cont = 0;
+    int mask = 2, cont = 1;
 
     if constexpr (lastSharedStep > 0) {
         // Shared memory steps
@@ -60,48 +60,45 @@ __global__ void stNttLocalRadix2_4096(int *__restrict__ vec, int mod) {
 
             __syncthreads();
 
-            uint woffset = wmask ? threadIdx.x + threadIdx.y * blockDim.x - threadStride
-                                 : threadIdx.x + threadIdx.y * blockDim.x + threadStride;
+            uint woffset = wmask ? threadIdx.x + threadIdx.y * blockDim.x - threadStrideRadix2_4096
+                                 : threadIdx.x + threadIdx.y * blockDim.x + threadStrideRadix2_4096;
             reg[!wmask] = firstShfls[woffset];
 
             offset += wmask * mask;
-            idxVirtual = ((idxVirtual << step) & (N2 - 1)) + offset;
+            idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
 
-            butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+            butterfly<ButterflyConfig>(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
             mask = mask << 1;
             cont++;
         }
     }
 
-    uint wgidx = (N2 * threadIdx.y & (warpSize - 1));  // Group index in warp
-    uint gmask = ~(0xffffffff << N2) << wgidx;
-
     int shfl_reg[4];
     // Shfl steps
     for (uint step = lastSharedStep + 1; step < lN; step++) {
-        uint threadvirtual =
-            (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1)) + wgidx;
+        uint threadvirtual = (((idxVirtual & (mask - 1)) + (idxVirtual >> (cont + 1) << cont)) & ((n >> 2) - 1));
         uint threadvirtual2 = threadvirtual + (n >> 2);
         uint swapidx = (idxVirtual & mask) != 0;
 
-        __syncwarp(gmask);
+        __syncwarp(0xffffffff);
 
-        shfl_reg[0] = __shfl_sync(gmask, reg[0], (threadvirtual >> lastSharedStep));
-        shfl_reg[1] = __shfl_sync(gmask, reg[1], (threadvirtual >> lastSharedStep));
-        shfl_reg[2] = __shfl_sync(gmask, reg[0], (threadvirtual2 >> lastSharedStep));
-        shfl_reg[3] = __shfl_sync(gmask, reg[1], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[0] = __shfl_sync(0xffffffff, reg[0], (threadvirtual >> lastSharedStep));
+        shfl_reg[1] = __shfl_sync(0xffffffff, reg[1], (threadvirtual >> lastSharedStep));
+        shfl_reg[2] = __shfl_sync(0xffffffff, reg[0], (threadvirtual2 >> lastSharedStep));
+        shfl_reg[3] = __shfl_sync(0xffffffff, reg[1], (threadvirtual2 >> lastSharedStep));
 
         reg[0] = shfl_reg[swapidx];
         reg[1] = shfl_reg[swapidx + 2];
 
-        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        butterfly<ButterflyConfig>(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
         mask = mask << 1;
         cont++;
     }
 
     // dPos is calculated again to account for the interleaving done in the first stage
+    // dPos = ((blockIdx.x >> 1) * n) + ((idxVirtual >> step) << (step + 1)) + (idxVirtual & ((1 << step) - 1));
     dPos = ((blockIdx.x >> 1) * n) + idxVirtual;
 
     vec[dPos] = reg[0];

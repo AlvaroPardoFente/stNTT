@@ -5,6 +5,7 @@
 #include "ntt/cuda/implementations/common.cuh"
 #include "ntt/cuda/implementations/st_ntt_local_radix2_4096.cuh"
 
+template <typename ButterflyConfig = Radix2Butterfly>
 __global__ void stNttGlobalRadix2_4096(int *__restrict__ vec, int mod) {
     extern __shared__ int firstShfls[];
 
@@ -20,21 +21,23 @@ __global__ void stNttGlobalRadix2_4096(int *__restrict__ vec, int mod) {
 
     int dPos = ((blockIdx.x >> 1) * n) + idxVirtual;
 
-    // int *twiddles = (int *)const_twiddles;
+    int *twiddles = (int *)const_twiddles;
     int reg[2];
 
     reg[0] = vec[dPos];
     reg[1] = vec[dPos + (n >> 1)];
 
     // First butterfly
-    // butterfly(reg, twiddles[idxVirtual], mod);
+    butterfly<ButterflyConfig>(reg, twiddles[idxVirtual], mod);
 
+    dPos <<= 1;
     vec[dPos] = reg[0];
-    vec[dPos + (n >> 1)] = reg[1];
+    vec[dPos + 1] = reg[1];
 }
 
+template <typename ButterflyConfig = Radix2Butterfly>
 void sttNttRadix2_4096(int *__restrict__ vec, int mod, dim3 dimGrid, dim3 dimBlock, uint sharedMem) {
-    stNttGlobalRadix2_4096<<<dimGrid, dimBlock>>>(vec, mod);
+    stNttGlobalRadix2_4096<ButterflyConfig><<<dimGrid, dimBlock>>>(vec, mod);
     CCErr(cudaDeviceSynchronize());
-    stNttLocalRadix2_4096<<<dimGrid, dimBlock, sharedMem>>>(vec, mod);
+    stNttLocalRadix2_4096<ButterflyConfig><<<dimGrid, dimBlock, sharedMem>>>(vec, mod);
 }
