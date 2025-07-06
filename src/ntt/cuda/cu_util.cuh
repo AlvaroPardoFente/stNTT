@@ -65,18 +65,41 @@ __device__ __forceinline__ void swap(T &a, T &b) {
 // GPU buffer wrapper for simple cases
 template <typename T>
 struct Buffer {
+    Buffer() {}
+
     Buffer(std::span<T> span) {
         this->load(span);
     }
 
-    ~Buffer() {
-        if (this->data() != nullptr) {
-            CCErr(cudaFree(this->data()));
-        }
+    Buffer(std::integral auto size) {
+        this->alloc(size);
     }
 
-    void alloc(size_t size) {
-        if (size < 1ul)
+    // Deleted copy
+    Buffer(const Buffer &) = delete;
+    Buffer &operator=(const Buffer &) = delete;
+
+    // Enabled move
+    Buffer(Buffer &&other) noexcept : data_(other.data_), size_(other.size_) {
+        other.release();  // Transfer ownership
+    }
+
+    Buffer &operator=(Buffer &&other) noexcept {
+        if (this != &other) {
+            reset();
+            data_ = other.data_;
+            size_ = other.size_;
+            other.release();
+        }
+        return *this;
+    }
+
+    ~Buffer() {
+        reset();
+    }
+
+    void alloc(std::integral auto size) {
+        if (size < 1)
             throw std::invalid_argument("Size mut be grater than zero");
         this->size_ = size;
         CCErr(cudaMalloc(&data_, this->bytes()));
@@ -97,6 +120,10 @@ struct Buffer {
         return data_;
     }
 
+    const T *data() const {
+        return data_;
+    }
+
     size_t size() {
         return size_;
     }
@@ -108,5 +135,16 @@ struct Buffer {
 private:
     T *data_{};
     size_t size_{};
+
+    void release() {
+        data_ = nullptr;
+        size_ = 0;
+    }
+
+    void reset() {
+        if (data_ != nullptr)
+            CCErr(cudaFree(this->data()));
+        release();
+    }
 };
 }  // namespace cuda
