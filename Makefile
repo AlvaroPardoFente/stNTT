@@ -58,8 +58,9 @@ SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp
 SRCS += main.cu
 
 TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cu
+BENCH_SRCS := src/bench.cu
 
-.PHONY: all clean run test ptx
+.PHONY: all clean run test bench ptx
 # Default, make executable target
 all: $(BUILD_DIR)/$(TARGET)
 
@@ -86,6 +87,15 @@ test-build: $(BUILD_DIR)/test
 
 # Build test executable
 $(BUILD_DIR)/test: $(TEST_SRCS) $(filter-out $(BUILD_DIR)/main.cu.o,$(OBJS))
+	mkdir -p $(BUILD_DIR)
+	$(EXEC) $(NVCC) $(NVCCARGS) $(GENCODE_FLAGS) $(INCLUDES) -o $@ $^
+
+bench: $(BUILD_DIR)/bench
+	./$(BUILD_DIR)/bench
+
+bench-build: $(BUILD_DIR)/bench
+
+$(BUILD_DIR)/bench: $(BENCH_SRCS) $(filter-out $(BUILD_DIR)/main.cu.o,$(OBJS))
 	mkdir -p $(BUILD_DIR)
 	$(EXEC) $(NVCC) $(NVCCARGS) $(GENCODE_FLAGS) $(INCLUDES) -o $@ $^
 
