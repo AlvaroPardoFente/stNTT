@@ -23,7 +23,7 @@
 namespace cuda {
 constexpr std::array<uint, 6> defaultBatchesNums = {1, 2, 5, 10, 100, 1000};
 
-struct NttArgs {
+__host__ struct NttArgs {
     uint n{};
     uint batches{};
     uint root{};
@@ -38,6 +38,9 @@ struct NttArgs {
     bool isGlobal{};
 
     std::span<int> vec;
+
+    // This is needed to keep the args in the stats
+    NttArgs() = default;
 
     NttArgs(uint n, uint batches, uint root, uint mod, uint radix, uint blockSize = cuda::defaultBlockSize)
         : n(n), batches(batches), root(root), mod(mod), radix(radix), blockSize(blockSize) {
