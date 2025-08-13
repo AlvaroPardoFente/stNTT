@@ -5,24 +5,7 @@
 #include "util/io.h"
 #include "util/rng.h"
 #include "util/timer.h"
-
-template <std::size_t Offset, typename Seq>
-struct offset_index_sequence_impl;
-
-template <std::size_t Offset, std::size_t... Is>
-struct offset_index_sequence_impl<Offset, std::index_sequence<Is...>> {
-    using type = std::index_sequence<(Is + Offset)...>;
-};
-
-template <std::size_t Offset, std::size_t N>
-using make_index_sequence_from = typename offset_index_sequence_impl<Offset, std::make_index_sequence<N>>::type;
-
-template <size_t... I>
-constexpr auto generateGlobalRadix2Array(std::index_sequence<I...>) {
-    return std::array{sttNttGlobalRadix2<(1u << I)>...};
-}
-
-constexpr auto globalRadix2Funcs = generateGlobalRadix2Array(std::make_integer_sequence<size_t, 10>());
+#include "util/index_sequences.h"
 
 struct BenchStats {
     cuda::NttArgs args;
@@ -36,27 +19,10 @@ struct BenchStats {
     Timer::Duration totalTime;
 
     friend std::ostream& operator<<(std::ostream& os, const BenchStats& p);
-};
 
-std::ostream& operator<<(std::ostream& os, const BenchStats& p) {
-    os << "N: " << p.args.n << " (2^" << log2_uint(p.args.n) << ")\n";
-    os << "GPU time:\t\t" << p.gpuTime << "\n";
-    os << "findParams time:\t" << p.findParamsTime << "\n";
-    os << "initArgs time:\t\t" << p.initArgsTime << "\n";
-    os << "Full kernel time:\t" << p.kernelWithInitTime << "\n";
-    os << "Total time:\t\t" << p.totalTime << "\n";
-    // os << "Vector address: " << p.args.vec.data() << "\n";
-    // os << "Vector size(bytes): " << p.args.vec.size() << "(" << p.args.vec.size_bytes() << ")\n";
-    // os << "Batches: " << p.args.batches << "\n";
-    // os << "Root: " << p.args.root << "\n";
-    // os << "Mod: " << p.args.mod << "\n";
-    // os << "Radix: " << p.args.radix << "\n";
-    // os << "Block size: " << p.args.blockSize << "\n";
-    // os << "dimGrid: (" << p.args.dimGrid.x << ", " << p.args.dimGrid.y << ", " << p.args.dimGrid.z << ")\n";
-    // os << "dimBlock: (" << p.args.dimBlock.x << ", " << p.args.dimBlock.y << ", " << p.args.dimBlock.z << ")\n";
-    // os << "Shared memory: " << p.args.sharedMem << "\n";
-    return os;
-}
+    static std::ostream& csvHeader(std::ostream& os);
+    friend std::ostream& toCsv(std::ostream& os, const BenchStats& p);
+};
 
 template <size_t I>
 BenchStats runNttIteration(std::span<int> vec) {
@@ -71,19 +37,11 @@ BenchStats runNttIteration(std::span<int> vec) {
     stats.findParamsTime = timer.stop();
 
     timer.start();
-    cuda::NttArgs args(vec, n, batches, root, mod, 2);
+    cuda::NttArgs args(vec.subspan<0, n>(), n, batches, root, mod, 2);
     stats.args = args;
 
-    auto k = [args](cuda::Buffer<int>& vec, cuda::Buffer<int>& doubleBuffer) {
-        sttNttGlobalRadix2<n, EmptyButterfly>(
-            vec,
-            doubleBuffer,
-            args.batches,
-            args.mod,
-            args.dimGrid,
-            args.dimBlock,
-            args.sharedMem);
-    };
+    auto k = cuda::chooseKernel<n>(args);
+
     stats.initArgsTime = timer.stop();
 
     timer.start();
@@ -97,20 +55,103 @@ BenchStats runNttIteration(std::span<int> vec) {
 }
 
 template <size_t... I>
-auto runAll(std::span<int> vec, std::index_sequence<I...>) {
-    return std::array<BenchStats, sizeof...(I)>{runNttIteration<I>(vec)...};
+auto runAll(std::span<int> vec, size_t reps, std::index_sequence<I...>) {
+    std::vector<BenchStats> result{};
+    result.reserve(sizeof...(I) * reps);
+    // Warmup
+    (
+        [&]() {
+            for (size_t r = 0; r < 10; r++) {
+                runNttIteration<I>(vec);
+            }
+        }(),
+        ...);
+
+    size_t idx = 0;
+    (
+        [&]() {
+            for (size_t r = 0; r < reps; r++) {
+                result.push_back(runNttIteration<I>(vec));
+            }
+        }(),
+        ...);
+    return result;
 }
 
 int main() {
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector(pow(2, 20));
+    std::vector<int> vec = rng.get_vector(pow(2, 27));
     std::vector<int> cpuRes = vec;
     std::vector<int> gpuRes = vec;
     double gpuTime;
 
-    auto stats = runAll(gpuRes, make_index_sequence_from<12, 15>());
+    auto nRange = make_index_range<4, 27>();
 
-    for (const auto& stat : stats) {
-        std::cout << stat << "\n";
-    }
+    auto stats = runAll(gpuRes, 1, nRange);
+
+    bool printCsv = false;
+    if (printCsv) {
+        BenchStats::csvHeader(std::cout);
+        for (const auto& stat : stats)
+            toCsv(std::cout, stat);
+    } else
+        for (const auto& stat : stats) {
+            std::cout << stat << "\n";
+        }
 }
+
+std::ostream& operator<<(std::ostream& os, const BenchStats& p) {
+    os << "N: " << p.args.n << " (2^" << log2_uint(p.args.n) << ")\n";
+    os << "Kernel time:\t\t" << p.gpuTime << "\n";
+    os << "findParams time:\t" << p.findParamsTime << "\n";
+    os << "initArgs time:\t\t" << p.initArgsTime << "\n";
+    os << "Kernel+transfer time:\t" << p.kernelWithInitTime << "\n";
+    os << "Total time:\t\t" << p.totalTime << "\n";
+    // os << "Vector address: " << p.args.vec.data() << "\n";
+    // os << "Vector size(bytes): " << p.args.vec.size() << "(" << p.args.vec.size_bytes() << ")\n";
+    // os << "Batches: " << p.args.batches << "\n";
+    // os << "Root: " << p.args.root << "\n";
+    // os << "Mod: " << p.args.mod << "\n";
+    // os << "Radix: " << p.args.radix << "\n";
+    // os << "Block size: " << p.args.blockSize << "\n";
+    // os << "dimGrid: (" << p.args.dimGrid.x << ", " << p.args.dimGrid.y << ", " << p.args.dimGrid.z << ")\n";
+    // os << "dimBlock: (" << p.args.dimBlock.x << ", " << p.args.dimBlock.y << ", " << p.args.dimBlock.z << ")\n";
+    // os << "Shared memory: " << p.args.sharedMem << "\n";
+    return os;
+}
+
+static constexpr char sep = ',';
+std::ostream& BenchStats::csvHeader(std::ostream& os) {
+    // clang-format off
+    return os << "N"
+        << sep << "Kernel time"
+        << sep << "findParams time"
+        << sep << "initArgs time"
+        << sep << "Kernel+transfers time"
+        << sep << "Total time"
+        << "\n";
+    // clang-format on
+}
+std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
+    // clang-format off
+    return os << p.args.n
+        << sep << p.gpuTime
+        << sep << p.findParamsTime
+        << sep << p.initArgsTime
+        << sep << p.kernelWithInitTime
+        << sep << p.totalTime
+        << "\n";
+    // clang-format on
+}
+
+// std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
+//     // clang-format off
+//     return os << p.args.n
+//         << sep << p.gpuTime.count()
+//         << sep << p.findParamsTime.count()
+//         << sep << p.initArgsTime.count()
+//         << sep << p.kernelWithInitTime.count()
+//         << sep << p.totalTime.count()
+//         << "\n";
+//     // clang-format on
+// }

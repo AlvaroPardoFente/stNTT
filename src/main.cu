@@ -26,11 +26,11 @@ int main() {
         batches = std::stoi(batchesEnv);
 
     util::Rng rng(util::Rng::defaultSeed);
-    // std::vector<int> vec = rng.get_vector(vecSize * batches);
-    std::vector<int> vec(vecSize * batches);
-    std::iota(vec.begin(), vec.begin() + vecSize, 0);
-    for (int i = 1; i < batches; i++)
-        std::copy(vec.begin(), vec.begin() + vecSize, vec.begin() + i * vecSize);
+    std::vector<int> vec = rng.get_vector(vecSize * batches);
+    // std::vector<int> vec(vecSize * batches);
+    // std::iota(vec.begin(), vec.begin() + vecSize, 0);
+    // for (int i = 1; i < batches; i++)
+    //     std::copy(vec.begin(), vec.begin() + vecSize, vec.begin() + i * vecSize);
     std::vector<int> cpuRes = vec;
     std::vector<int> gpuRes = vec;
     double gpuTime;
@@ -38,21 +38,25 @@ int main() {
     auto [root, mod] = findParams(vecSize, minMod);
 
     // CPU
-    nttStockhamIdx(cpuRes, vecSize, root, mod, batches);
+    nttStockham(cpuRes, vecSize, root, mod, batches);
 
     // GPU
     try {
         cuda::NttArgs args(gpuRes, vecSize, batches, root, mod, 2);
-        auto k = [args](cuda::Buffer<int> &vec, cuda::Buffer<int> &doubleBuffer) {
-            sttNttGlobalRadix2<8192, EmptyButterfly>(
-                vec,
-                doubleBuffer,
-                args.batches,
-                args.mod,
-                args.dimGrid,
-                args.dimBlock,
-                args.sharedMem);
-        };
+        // auto k = [args](int *vec) {
+        //     stNttRadix2Adaptive<1 << 10><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
+        // };
+        // auto k = [args](cuda::Buffer<int> &vec, cuda::Buffer<int> &doubleBuffer) {
+        //     sttNttGlobalRadix2<1 << 27, Radix2Butterfly>(
+        //         vec,
+        //         doubleBuffer,
+        //         args.batches,
+        //         args.mod,
+        //         args.dimGrid,
+        //         args.dimBlock,
+        //         args.sharedMem);
+        // };
+        auto k = cuda::chooseKernel<1 << 25>(args);
         gpuTime = cuda::ntt(k, args);
     } catch (const std::out_of_range &e) {
         std::cerr << "Error: " << e.what() << "\n";

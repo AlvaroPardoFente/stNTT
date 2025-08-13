@@ -4,16 +4,19 @@
 #include <span>
 #include <tuple>
 #include <optional>
+#include <ranges>
+#include <algorithm>
 
-std::tuple<int, int> findParams(size_t size, int min_mod);
-int findModulus(int veclength, int min);
-int findPrimitiveRoot(int degree, int totient, int mod);
-int findGenerator(int totient, int mod);
+std::tuple<size_t, size_t> findParams(size_t size, size_t min_mod);
+size_t findModulus(size_t veclength, size_t min);
+size_t findPrimitiveRoot(size_t degree, size_t totient, size_t mod);
+size_t findGenerator(size_t totient, size_t mod);
 bool isPrimitiveRoot(size_t val, size_t degree, size_t mod);
 
-std::vector<int> uniquePrimeFactors(int n);
-bool isPrime(int n);
-int sqrt(int n);
+std::vector<size_t> uniquePrimeFactors(size_t n);
+template <typename T>
+bool isPrime(T n);
+size_t sqrt(size_t n);
 template <std::integral I>
 I pow(I base, I exponent, I mod);
 int modulo(int x, int mod);
@@ -22,15 +25,15 @@ int modulo(int x, int mod);
 // s0.size() must be less than or equal to s1.size()
 // TODO: Use proper mod multiplication instead of modulo
 template <typename T>
-void elemWiseMul(std::span<T> s0, std::span<T> s1, int mod) {
+void elemWiseMul(std::span<T> s0, std::span<T> s1, size_t mod) {
     size_t n = s0.size();
     for (size_t i = 0; i < n; ++i)
         s0[i] = modulo(s0[i] * s1[i], mod);
 }
 
 template <typename T>
-int bitReverse(T x, size_t bits) {
-    int y = 0;
+size_t bitReverse(T x, size_t bits) {
+    size_t y = 0;
     for (size_t i = 0; i < bits; ++i) {
         y = (y << 1) | (x & 1);
         x >>= 1;
@@ -56,6 +59,12 @@ template <typename T>
 std::vector<T> &bitReverseVector(std::vector<T> &vec) {
     size_t levels = std::bit_width(vec.size()) - 1;
     return bitReverseVector(vec, levels);
+}
+
+template <typename T>
+inline bool isPrime(T n) {
+    auto range = std::views::iota(2UL, sqrt(n) + 1UL);
+    return std::ranges::all_of(range, [&n](T x) { return n % x != 0; });
 }
 
 // Basic int modular power

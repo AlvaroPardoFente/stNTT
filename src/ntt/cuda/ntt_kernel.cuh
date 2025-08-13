@@ -12,6 +12,7 @@
 #include "ntt/cuda/implementations/st_ntt_radix4_adaptive.cuh"
 // #include "ntt/cuda/implementations/st_ntt_global_radix2_4096.cuh"
 #include "ntt/cuda/implementations/st_ntt_global_radix2.cuh"
+#include "ntt/cuda/implementations/st_ntt_goldilocks.cuh"
 
 #include <cuda_profiler_api.h>
 
@@ -106,6 +107,28 @@ stNtt(std::function<void(int* vec)> kernel, std::span<int> vec, uint n, uint bat
     vecGPU.store(vec);
 
     return gpuTime;
+}
+
+template <size_t n>
+auto chooseKernel(const cuda::NttArgs& args) {
+    if constexpr (n < (1 << 6)) {
+        return [args](int* vec) { stNttRadix2<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod); };
+    } else if constexpr (n < (1 << 12)) {
+        return [args](int* vec) {
+            stNttRadix2Adaptive<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
+        };
+    } else {
+        return [args](cuda::Buffer<int>& vec, cuda::Buffer<int>& doubleBuffer) {
+            sttNttGlobalRadix2<n, Radix2Butterfly>(
+                vec,
+                doubleBuffer,
+                args.batches,
+                args.mod,
+                args.dimGrid,
+                args.dimBlock,
+                args.sharedMem);
+        };
+    }
 }
 
 template <typename T>

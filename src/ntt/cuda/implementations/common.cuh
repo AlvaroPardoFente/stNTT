@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ntt/cuda/cu_util.cuh>
+#include <iostream>
 
 #define MAX_TWIDDLES 65536
 __constant__ int const_twiddles[MAX_TWIDDLES / sizeof(int)];
