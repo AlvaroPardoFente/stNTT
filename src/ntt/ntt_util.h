@@ -5,6 +5,7 @@
 #include <tuple>
 #include <optional>
 #include <ranges>
+#include <bit>
 #include <algorithm>
 
 std::tuple<size_t, size_t> findParams(size_t size, size_t min_mod);
