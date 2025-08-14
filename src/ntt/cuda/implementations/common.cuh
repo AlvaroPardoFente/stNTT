@@ -5,11 +5,21 @@
 
 #define MAX_TWIDDLES 65536
 __constant__ int const_twiddles[MAX_TWIDDLES / sizeof(int)];
-__device__ int* global_twiddles;
+__device__ int* global_twiddles = nullptr;
 
 int initTwiddles(int n, int root, int mod) {
+    // Guard to avoid leaking. TODO: Look for a different solution. This will always leak the last buffer
+    int* dev_ptr = nullptr;
+    CCErr(cudaMemcpyFromSymbol(&dev_ptr, global_twiddles, sizeof(dev_ptr)));
+    if (dev_ptr) {
+        CCErr(cudaFree(dev_ptr));  // free the actual allocation
+    }
+    // write nullptr back into the device symbol
+    int* nullp = nullptr;
+    CCErr(cudaMemcpyToSymbol(global_twiddles, &nullp, sizeof(nullp)));
+
     int numTwiddles = n / 2;
-    int twiddleBytes = numTwiddles * sizeof(n);
+    int twiddleBytes = numTwiddles * sizeof(int);
     // Should be a power of 2
     int ratio = twiddleBytes / MAX_TWIDDLES;
 
