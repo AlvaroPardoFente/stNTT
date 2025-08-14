@@ -15,74 +15,81 @@
 #include <algorithm>
 
 template <size_t I>
-void runNttIteration(std::span<int> vec, size_t batches) {
+void runNttIteration(std::span<int> vec, size_t batches, uint maxBlockSize) {
     constexpr size_t n = 1UL << I;
 
     auto [root, mod] = findParams(n, 11);
 
-    std::vector<int> cpuVec{vec.subspan<0, n>().begin(), vec.subspan<0, n>().end()};
-    nttStockham(cpuVec, I, root, mod, batches);
+    auto refSpan = vec.subspan(0, n * batches);
 
-    std::vector<int> gpuVec{vec.subspan<0, n>().begin(), vec.subspan<0, n>().end()};
-    cuda::NttArgs args(gpuVec, n, batches, root, mod, 2);
+    std::vector<int> cpuVec{refSpan.begin(), refSpan.end()};
+    nttStockham(cpuVec, n, root, mod, batches);
+
+    std::vector<int> gpuVec{refSpan.begin(), refSpan.end()};
+    cuda::NttArgs args(gpuVec, n, batches, root, mod, 2, maxBlockSize);
 
     // auto k = cuda::chooseKernel<n>(args);
-    auto k = [args](int *vec) {
-        stNttRadix2Adaptive<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
-    };
+    // auto k = [args](int *vec) {
+    //     stNttRadix2Adaptive<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
+    // };
 
-    cuda::ntt(k, args);
-
+    // cuda::ntt(k, args);
+    cuda::autoNtt<n>(args);
     CHECK(cpuVec == gpuVec);
 }
 template <size_t... I>
-void runAll(std::span<int> vec, size_t batches, std::index_sequence<I...>) {
-    ([&]() { runNttIteration<I>(vec, batches); }(), ...);
+void runAll(std::span<int> vec, size_t batches, uint maxBlockSize, std::index_sequence<I...>) {
+    ([&]() { runNttIteration<I>(vec, batches, maxBlockSize); }(), ...);
 }
 
-TEST_CASE("stNttRadix2Adaptive for N[2:2048]") {
+TEST_CASE("stNttRadix2 for N[2^1:2^6]") {
     int minMod = 11;
-    auto nRange = make_index_range<2, 12>();
+    auto nRange = make_index_range<2, 7>();
+    util::Rng rng(util::Rng::defaultSeed);
+    std::vector<int> vec = rng.get_vector((1 << 6) * cuda::defaultBatchesNums.back());
+
+    for (const auto batch : cuda::defaultBatchesNums) {
+        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+            runAll(vec, batch, maxBlockSize, nRange);
+    }
+}
+
+TEST_CASE("stNttRadix2Adaptive for N[2^7:2^11]") {
+    int minMod = 11;
+    auto nRange = make_index_range<7, 12>();
     util::Rng rng(util::Rng::defaultSeed);
     std::vector<int> vec = rng.get_vector((1 << 11) * cuda::defaultBatchesNums.back());
 
     for (const auto batch : cuda::defaultBatchesNums) {
-        runAll(vec, batch, nRange);
+        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+            runAll(vec, batch, maxBlockSize, nRange);
     }
 }
 
-// TEST_CASE("radix2_global_4096") {
-//     constexpr uint n = 4096;
-//     constexpr int minMod = 11;
-//     auto [root, mod] = findParams(n, minMod);
+TEST_CASE("stNttGlobalRadix2 for N[2^12:2^20]") {
+    int minMod = 11;
+    auto nRange = make_index_range<12, 21>();
+    util::Rng rng(util::Rng::defaultSeed);
+    std::vector<int> vec = rng.get_vector((1 << 20) * cuda::defaultBatchesNums.back());
 
-//     util::Rng rng(util::Rng::defaultSeed);
-//     std::vector<int> vec = rng.get_vector(n * cuda::defaultBatchesNums.back());
+    for (const auto batch : cuda::defaultBatchesNums) {
+        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+            runAll(vec, batch, maxBlockSize, nRange);
+    }
+}
+TEST_CASE("stNttGlobalRadix2 for N[2^21:2^27]" * doctest::skip()) {
+    int minMod = 11;
+    auto nRange = make_index_range<21, 27>();
+    util::Rng rng(util::Rng::defaultSeed);
+    std::vector<int> vec = rng.get_vector((1 << 26) * cuda::defaultBatchesNums.back());
 
-//     for (const auto batches : cuda::defaultBatchesNums) {
-//         std::vector<int> cpuRes(vec.begin(), vec.begin() + n * batches);
-//         std::vector<int> gpuRes(vec.begin(), vec.begin() + n * batches);
-//         auto [dimGrid, dimBlock, sharedMem] = cuda::getNttKernelArgs(n, 2, batches);
+    // This test is too slow to add both batches and block sizes
+    for (const auto batch : cuda::defaultBatchesNums) {
+        runAll(vec, batch, 1024, nRange);
+    }
+}
 
-//         nttStockham(cpuRes.data(), n, root, mod, batches);
-//         auto a = [mod, dimGrid, dimBlock, sharedMem](int *vec) {
-//             sttNttRadix2_4096(vec, mod, dimGrid, dimBlock, sharedMem);
-//         };
-//         cuda::stNtt(a, gpuRes, n, batches, root, mod);
-//         CHECK_MESSAGE(cpuRes == gpuRes, std::string("n=" + std::to_string(n) + ", batches=" +
-//         std::to_string(batches)));
-//     }
-// }
-
-// TEST_CASE("All implementations") {
-//     util::Rng rng(util::Rng::defaultSeed);
-//     std::vector<uint> batchesNums = {1, 2, 5, 10, 100, 1000};
-//     std::vector<int> vec = rng.get_vector(2048 * *std::max_element(batchesNums.begin(), batchesNums.end()));
-
-//     for (auto&)
-// }
-
-TEST_CASE("findParams works for all tested Ns") {
+TEST_CASE("findParams works for all tested Ns" * doctest::skip(false)) {
     size_t minMod = 11;
     size_t root = 0, mod = 0;
 
@@ -90,7 +97,7 @@ TEST_CASE("findParams works for all tested Ns") {
         auto [newRoot, newMod] = findParams(n, minMod);
 
         CHECK(newMod >= mod);
-        std::cout << n << ": " << newMod << ", " << newRoot << "\n";
+        // std::cout << n << ": " << newMod << ", " << newRoot << "\n";
         mod = newMod;
         root = newRoot;
     }
