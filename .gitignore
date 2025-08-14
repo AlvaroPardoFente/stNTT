@@ -67,3 +67,7 @@ build
 
 # VSCode
 .vscode
+
+# Python
+venv
+.venv
