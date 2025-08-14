@@ -42,7 +42,7 @@ int main() {
 
     // GPU
     try {
-        cuda::NttArgs args(gpuRes, vecSize, batches, root, mod, 2);
+        cuda::NttArgs args(gpuRes, vecSize, batches, root, mod, 2, 64);
         // auto k = [args](int *vec) {
         //     stNttRadix2Adaptive<1 << 10><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
         // };
@@ -56,8 +56,9 @@ int main() {
         //         args.dimBlock,
         //         args.sharedMem);
         // };
-        auto k = cuda::chooseKernel<1 << 25>(args);
-        gpuTime = cuda::ntt(k, args);
+        // auto k = cuda::chooseKernel<1 << 8>(args);
+        // gpuTime = cuda::ntt(k, args);
+        gpuTime = cuda::autoNtt<1 << 20>(args);
     } catch (const std::out_of_range &e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::cerr << "This may be due to an unsupported vector size or root/mod combination.\n";

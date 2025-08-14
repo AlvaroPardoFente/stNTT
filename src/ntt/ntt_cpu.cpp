@@ -47,7 +47,7 @@ void nttStockham(int *vec, int size, int root, int mod, std::optional<int> nstep
     size_t n = size;
     int steps = std::bit_width(n) - 1;
     if (1 << steps != n)
-        throw std::invalid_argument("size must be a power of 2");
+        throw std::invalid_argument("size (" + std::to_string(n) + ") must be a power of 2");
 
     std::vector<int> y_vector(n, 0);
     int *y = y_vector.data();
@@ -93,7 +93,7 @@ void nttStockhamIdx(int *vec, int size, int root, int mod, std::optional<int> ns
     size_t n = size;
     int steps = std::bit_width(n) - 1;
     if (1 << steps != n)
-        throw std::invalid_argument("size must be a power of 2");
+        throw std::invalid_argument("size (" + std::to_string(n) + ") must be a power of 2");
 
     std::vector<int> y_vector(n, 0);
     int *y = y_vector.data();

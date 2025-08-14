@@ -25,7 +25,7 @@ struct BenchStats {
 };
 
 template <size_t I>
-BenchStats runNttIteration(std::span<int> vec) {
+BenchStats runNttIteration(std::span<int> vec, uint maxBlockSize) {
     Timer totalTimer;
     BenchStats stats;
 
@@ -37,15 +37,16 @@ BenchStats runNttIteration(std::span<int> vec) {
     stats.findParamsTime = timer.stop();
 
     timer.start();
-    cuda::NttArgs args(vec.subspan<0, n>(), n, batches, root, mod, 2);
+    cuda::NttArgs args(vec.subspan(0, n * batches), n, batches, root, mod, 2, maxBlockSize);
     stats.args = args;
 
-    auto k = cuda::chooseKernel<n>(args);
+    // auto k = cuda::chooseKernel<n>(args);
 
     stats.initArgsTime = timer.stop();
 
     timer.start();
-    double gpuTime = cuda::ntt(k, args);
+    // double gpuTime = cuda::ntt(k, args);
+    double gpuTime = cuda::autoNtt<n>(args);
     stats.kernelWithInitTime = timer.stop();
     stats.gpuTime = Timer::Duration(gpuTime);
 
@@ -55,14 +56,14 @@ BenchStats runNttIteration(std::span<int> vec) {
 }
 
 template <size_t... I>
-auto runAll(std::span<int> vec, size_t reps, std::index_sequence<I...>) {
+auto runAll(std::span<int> vec, size_t reps, uint maxBlockSize, std::index_sequence<I...>) {
     std::vector<BenchStats> result{};
     result.reserve(sizeof...(I) * reps);
     // Warmup
     (
         [&]() {
             for (size_t r = 0; r < 10; r++) {
-                runNttIteration<I>(vec);
+                runNttIteration<I>(vec, maxBlockSize);
             }
         }(),
         ...);
@@ -71,7 +72,7 @@ auto runAll(std::span<int> vec, size_t reps, std::index_sequence<I...>) {
     (
         [&]() {
             for (size_t r = 0; r < reps; r++) {
-                result.push_back(runNttIteration<I>(vec));
+                result.push_back(runNttIteration<I>(vec, maxBlockSize));
             }
         }(),
         ...);
@@ -85,11 +86,15 @@ int main() {
     std::vector<int> gpuRes = vec;
     double gpuTime;
 
-    auto nRange = make_index_range<4, 27>();
+    auto nRange = make_index_range<2, 27>();
 
-    auto stats = runAll(gpuRes, 1, nRange);
+    std::vector<BenchStats> stats;
+    for (const auto maxBlockSize : cuda::defaultMaxBlockSizes) {
+        auto blockStats = runAll(gpuRes, 20, maxBlockSize, nRange);
+        stats.insert(stats.end(), blockStats.begin(), blockStats.end());
+    }
 
-    bool printCsv = false;
+    bool printCsv = true;
     if (printCsv) {
         BenchStats::csvHeader(std::cout);
         for (const auto& stat : stats)
@@ -102,6 +107,7 @@ int main() {
 
 std::ostream& operator<<(std::ostream& os, const BenchStats& p) {
     os << "N: " << p.args.n << " (2^" << log2_uint(p.args.n) << ")\n";
+    os << "Block size:\t\t" << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z << "\n";
     os << "Kernel time:\t\t" << p.gpuTime << "\n";
     os << "findParams time:\t" << p.findParamsTime << "\n";
     os << "initArgs time:\t\t" << p.initArgsTime << "\n";
@@ -124,6 +130,7 @@ static constexpr char sep = ',';
 std::ostream& BenchStats::csvHeader(std::ostream& os) {
     // clang-format off
     return os << "N"
+        << sep << "Block size"
         << sep << "Kernel time"
         << sep << "findParams time"
         << sep << "initArgs time"
@@ -132,26 +139,28 @@ std::ostream& BenchStats::csvHeader(std::ostream& os) {
         << "\n";
     // clang-format on
 }
-std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
-    // clang-format off
-    return os << p.args.n
-        << sep << p.gpuTime
-        << sep << p.findParamsTime
-        << sep << p.initArgsTime
-        << sep << p.kernelWithInitTime
-        << sep << p.totalTime
-        << "\n";
-    // clang-format on
-}
-
 // std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
 //     // clang-format off
 //     return os << p.args.n
-//         << sep << p.gpuTime.count()
-//         << sep << p.findParamsTime.count()
-//         << sep << p.initArgsTime.count()
-//         << sep << p.kernelWithInitTime.count()
-//         << sep << p.totalTime.count()
+//         << sep << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z
+//         << sep << p.gpuTime
+//         << sep << p.findParamsTime
+//         << sep << p.initArgsTime
+//         << sep << p.kernelWithInitTime
+//         << sep << p.totalTime
 //         << "\n";
 //     // clang-format on
 // }
+
+std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
+    // clang-format off
+    return os << p.args.n
+        << sep << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z
+        << sep << p.gpuTime.count()
+        << sep << p.findParamsTime.count()
+        << sep << p.initArgsTime.count()
+        << sep << p.kernelWithInitTime.count()
+        << sep << p.totalTime.count()
+        << "\n";
+    // clang-format on
+}

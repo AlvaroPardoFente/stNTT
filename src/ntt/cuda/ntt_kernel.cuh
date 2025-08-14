@@ -22,7 +22,8 @@
 #include <span>
 
 namespace cuda {
-constexpr std::array<uint, 6> defaultBatchesNums = {1, 2, 5, 10, 100, 1000};
+constexpr std::array<uint, 4> defaultBatchesNums = {1, 2, 5, 10};
+constexpr std::array<uint, 5> defaultMaxBlockSizes = {64, 128, 256, 512, 1024};
 
 __host__ struct NttArgs {
     uint n{};
@@ -173,6 +174,57 @@ __forceinline__ float ntt(KernelFunc kernel, cuda::NttArgs args) {
     CCErr(cudaDeviceSynchronize());
 
     vecGPU.store(args.vec);
+
+    return gpuTime;
+}
+
+template <size_t n>
+float autoNtt(cuda::NttArgs args) {
+    float gpuTime;
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+
+    cuda::Buffer vecGPU(args.vec);
+    cuda::Buffer<int> doubleBuffer;
+    if (args.isGlobal)
+        doubleBuffer.alloc(args.vec.size());
+
+    initTwiddles(args.n, args.root, args.mod);
+
+    cudaProfilerStart();
+    cudaEventRecord(start);
+
+    if (!args.isGlobal) {
+        if constexpr (n < (1 << 6)) {
+            stNttRadix2<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vecGPU.data(), args.mod);
+        } else {
+            stNttRadix2Adaptive<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vecGPU.data(), args.mod);
+        }
+    } else {
+        sttNttGlobalRadix2<n, Radix2Butterfly>(
+            vecGPU,
+            doubleBuffer,
+            args.batches,
+            args.mod,
+            args.dimGrid,
+            args.dimBlock,
+            args.sharedMem);
+    }
+
+    CCErr(cudaGetLastError());
+    CCErr(cudaEventRecord(end));
+
+    CCErr(cudaProfilerStop());
+    CCErr(cudaEventSynchronize(end));
+    CCErr(cudaEventElapsedTime(&gpuTime, start, end));
+
+    CCErr(cudaDeviceSynchronize());
+
+    vecGPU.store(args.vec);
+
+    CCErr(cudaEventDestroy(start));
+    CCErr(cudaEventDestroy(end));
 
     return gpuTime;
 }
