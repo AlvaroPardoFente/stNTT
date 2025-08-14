@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "ntt/cuda/cu_util.cuh"
 
 __device__ __forceinline__ int modulo(int x, int mod);
