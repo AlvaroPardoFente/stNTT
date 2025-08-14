@@ -4,6 +4,7 @@
 #include <span>
 #include <stdexcept>
 #include <cuda_runtime.h>
+#include <iostream>
 
 constexpr uint warpSizeConst = 32;
 
@@ -99,6 +100,7 @@ struct Buffer {
     }
 
     void alloc(std::integral auto size) {
+        reset();
         if (size < 1)
             throw std::invalid_argument("Size mut be grater than zero");
         this->size_ = size;
@@ -142,8 +144,9 @@ private:
     }
 
     void reset() {
-        if (data_ != nullptr)
+        if (data_ != nullptr) {
             CCErr(cudaFree(this->data()));
+        }
         release();
     }
 };
