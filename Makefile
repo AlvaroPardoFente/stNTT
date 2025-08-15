@@ -1,5 +1,6 @@
 # Debug
 DEBUG?=0
+PROF?=0
 
 # Compiler paths
 HOST_COMPILER ?= g++
@@ -21,14 +22,17 @@ GENCODE_FLAGS ?= --gpu-architecture=native
 # Debug build flags
 # -g is --debug, -G is --device-debug, -Xptxas passes options to the PTX assembler
 ifeq ($(DEBUG),1)
-        NVCCFLAGS += -DDEBUG -g -G -src-in-ptx -keep -keep-dir $(BUILD_DIR) -Xptxas -O0,-v
-        CCFLAGS += -Wall -O0 -rdynamic
-        BUILD_TYPE := debug
+    NVCCFLAGS += -DDEBUG -g -G -src-in-ptx -keep -keep-dir $(BUILD_DIR) -Xptxas -O0,-v
+    CCFLAGS += -Wall -O0 -rdynamic
+    BUILD_TYPE := debug
 $(info DEBUG configuration enabled)
 else
-        NVCCFLAGS += -Xptxas -O3
-        CCFLAGS += -Wall -O2 -march=native -mtune=native
-        BUILD_TYPE := release
+    NVCCFLAGS += -Xptxas -O3
+    CCFLAGS += -Wall -O2 -march=native -mtune=native
+    BUILD_TYPE := release
+endif
+ifeq ($(PROF),1)
+    NVCCFLAGS += -lineinfo
 endif
 
 # Project directories
