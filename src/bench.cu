@@ -86,7 +86,7 @@ int main() {
     std::vector<int> gpuRes = vec;
     double gpuTime;
 
-    auto nRange = make_index_range<2, 27>();
+    auto nRange = make_index_range<2, 28>();
 
     std::vector<BenchStats> stats;
     for (const auto maxBlockSize : cuda::defaultMaxBlockSizes) {
@@ -129,7 +129,7 @@ std::ostream& operator<<(std::ostream& os, const BenchStats& p) {
 static constexpr char sep = ',';
 std::ostream& BenchStats::csvHeader(std::ostream& os) {
     // clang-format off
-    return os << "N"
+    return os << "log2_N"
         << sep << "Block size"
         << sep << "Kernel time"
         << sep << "findParams time"
@@ -154,7 +154,7 @@ std::ostream& BenchStats::csvHeader(std::ostream& os) {
 
 std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
     // clang-format off
-    return os << p.args.n
+    return os << log2_uint(p.args.n)
         << sep << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z
         << sep << p.gpuTime.count()
         << sep << p.findParamsTime.count()
