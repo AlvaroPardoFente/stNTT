@@ -190,7 +190,7 @@ float autoNtt(cuda::NttArgs args) {
     if (args.isGlobal)
         doubleBuffer.alloc(args.vec.size());
 
-    initTwiddles(args.n, args.root, args.mod);
+    initTwiddles<MixedTwiddles>(args.n, args.root, args.mod);
 
     cudaProfilerStart();
     cudaEventRecord(start);
