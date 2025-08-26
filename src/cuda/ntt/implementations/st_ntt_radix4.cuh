@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 template <uint n>
 __global__ void stNttRadix4(int *__restrict__ vec, int mod) {
@@ -25,8 +25,8 @@ __global__ void stNttRadix4(int *__restrict__ vec, int mod) {
     reg[2] = vec[dPos2];
     reg[3] = vec[dPos2 + N2];
 
-    butterfly(reg, twiddles[tidx], mod);
-    butterfly(&(reg[2]), twiddles[tidx1], mod);
+    cuda::ntt::butterfly(reg, twiddles[tidx], mod);
+    cuda::ntt::butterfly(&(reg[2]), twiddles[tidx1], mod);
 
     uint wgidx = (N4 * threadIdx.y & (warpSize - 1));  // Group index in warp
     uint gmask = ~(0xffffffff << N4) << wgidx;
@@ -80,8 +80,8 @@ __global__ void stNttRadix4(int *__restrict__ vec, int mod) {
         // printff("\n");
 #endif
 
-        butterfly(reg, twiddles[(tidx >> step) * (1 << step)], mod);
-        butterfly(&(reg[2]), twiddles[(tidx1 >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(tidx >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(&(reg[2]), twiddles[(tidx1 >> step) * (1 << step)], mod);
 
 #ifdef PRINT_STEPS_CUDA
         printfth(

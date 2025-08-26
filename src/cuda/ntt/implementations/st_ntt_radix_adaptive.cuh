@@ -1,14 +1,14 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 template <uint n, uint radix>
 __global__ void stNttRadixAdaptive(int *__restrict__ vec, int mod) {
-    constexpr uint lN = log2_constexpr(n);
+    constexpr uint lN = cuda::log2_constexpr(n);
     constexpr uint radixDiv2 = radix >> 1;
-    constexpr uint radixIdx = log2_constexpr(radix);
+    constexpr uint radixIdx = cuda::log2_constexpr(radix);
 
     // All simulated thread indices this thread will use (radix 2 -> 1, radix 4 -> 2...)
     uint tidx[radixDiv2];
@@ -32,7 +32,7 @@ __global__ void stNttRadixAdaptive(int *__restrict__ vec, int mod) {
 
     // TODO: Check if other implementations are faster for radix > 2
     for (uint i = 0; i < radixDiv2; i++)
-        butterfly(&(reg[i * 2]), twiddles[tidx[i]], mod);
+        cuda::ntt::butterfly(&(reg[i * 2]), twiddles[tidx[i]], mod);
 
     uint wgidx = ((n >> radixIdx) * threadIdx.y & (warpSize - 1));  // Group index in warp
     uint gmask = ~(0xffffffff << (n >> radixIdx)) << wgidx;
@@ -103,7 +103,7 @@ __global__ void stNttRadixAdaptive(int *__restrict__ vec, int mod) {
 
         // TODO: Check if other implementations are faster for radix > 2
         for (uint i = 0; i < radixDiv2; i++)
-            butterfly(&(reg[i << 1]), twiddles[(tidx[i] >> step) * (1 << step)], mod);
+            cuda::ntt::butterfly(&(reg[i << 1]), twiddles[(tidx[i] >> step) * (1 << step)], mod);
 
 #ifdef PRINT_STEPS_CUDA
         for (uint i = 0; i < radixDiv2; i++) {

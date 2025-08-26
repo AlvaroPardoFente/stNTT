@@ -1,21 +1,21 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 __global__ void stNttRadix2_512(int *__restrict__ vec, int mod) {
     // 2 buffers for the first shfl (w0 sends 2nd half to w1, w1 sends 1st half to w0)
     // One int for each thread
     extern __shared__ int firstShfls[];
 
-    constexpr uint n = 512;                 // Number of elements in the vector
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint n = 512;                       // Number of elements in the vector
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
 
     uint idxInWarp = threadIdx.x & (warpSize - 1);                                 // 0-31
     uint numWarps = (blockDim.x + warpSize - 1) / warpSize;                        // Number of warps in the NTT
     uint widx = ((blockDim.x * threadIdx.y + threadIdx.x) / warpSize) % numWarps;  // Warp index in the block
-    uint logNumWarps = log2_constexpr(numWarps);                                   // log2(numWarps)
+    uint logNumWarps = cuda::log2_constexpr(numWarps);                             // log2(numWarps)
     int dPos = (blockIdx.x * n * blockDim.y) + threadIdx.x + (threadIdx.y << lN);
 
     int *twiddles = (int *)const_twiddles;
@@ -25,7 +25,7 @@ __global__ void stNttRadix2_512(int *__restrict__ vec, int mod) {
     reg[1] = vec[dPos + (n >> 1)];
 
     // First butterfly
-    butterfly(reg, twiddles[threadIdx.x], mod);
+    cuda::ntt::butterfly(reg, twiddles[threadIdx.x], mod);
 
     uint idxVirtual;
 
@@ -48,7 +48,7 @@ __global__ void stNttRadix2_512(int *__restrict__ vec, int mod) {
         offset += wmask * mask;
         idxVirtual = ((threadIdx.x << step) % blockDim.x) + offset;
 
-        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
         mask = mask << 1;
         cont++;
@@ -71,7 +71,7 @@ __global__ void stNttRadix2_512(int *__restrict__ vec, int mod) {
         reg[0] = shfl_reg[swapidx];
         reg[1] = shfl_reg[swapidx + 2];
 
-        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
         mask = mask << 1;
         cont++;

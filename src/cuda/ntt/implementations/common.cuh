@@ -1,7 +1,8 @@
 #pragma once
 
-#include <ntt/cuda/cu_util.cuh>
 #include <iostream>
+
+#include "cuda/cu_util.cuh"
 
 #define MAX_TWIDDLES 65536
 __constant__ int const_twiddles[MAX_TWIDDLES / sizeof(int)];
@@ -114,7 +115,7 @@ __device__ int twiddle(uint i) {
         // sizeof(n) being a power of 2 is assumed
         // TODO: make sizeof dependant on the actual twiddle/number type
         constexpr uint ratio = ((n / 2) * sizeof(int)) / MAX_TWIDDLES;
-        constexpr uint logRatio = log2_constexpr(ratio);
+        constexpr uint logRatio = cuda::log2_constexpr(ratio);
 
         if constexpr (ratio <= 1)
             return const_twiddles[i];

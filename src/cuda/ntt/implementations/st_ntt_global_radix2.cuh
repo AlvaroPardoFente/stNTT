@@ -1,19 +1,20 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
-#include "ntt/cuda/implementations/st_ntt_local_radix2.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
+#include "cuda/ntt/implementations/st_ntt_local_radix2.cuh"
 
-template <uint n, typename ButterflyConfig = Radix2Butterfly>
+template <uint n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __global__ void stNttGlobalRadix2_rest(int *__restrict__ vec, int *__restrict__ out, int mod, uint step) {
     constexpr uint nPerBlock = n > 2048 ? 2048 : n;
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
-    const uint numBlocks = n >> (1 + log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
+    const uint numBlocks =
+        n >> (1 + cuda::log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
 
     int reg[2];
 
@@ -32,7 +33,7 @@ __global__ void stNttGlobalRadix2_rest(int *__restrict__ vec, int *__restrict__ 
 #define threadStrideRadix2Global (warpStride * warpSizeConst)
     uint wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
-    int dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + (idxInGroup << 1);
+    int dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + (idxInGroup << 1);
 
     // The last virtual index in the shared memory steps is used in the warp shfl steps
     uint idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
@@ -41,10 +42,10 @@ __global__ void stNttGlobalRadix2_rest(int *__restrict__ vec, int *__restrict__ 
     reg[1] = vec[dPos + wmask + !wmask * (int)threadStrideRadix2Global * 2];
 
     // First butterfly
-    butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
+    cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
 
-    if (false && step == lN - log2_uint(nPerBlock) - 1) {  // Final (for debugging)
-        dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + ((idxVirtual >> step) << (step + 1)) +
+    if (false && step == lN - cuda::log2_uint(nPerBlock) - 1) {  // Final (for debugging)
+        dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + ((idxVirtual >> step) << (step + 1)) +
                (idxVirtual & ((1 << step) - 1));
         out[dPos] = reg[0];
         out[dPos + (1 << step)] = reg[1];
@@ -55,20 +56,21 @@ __global__ void stNttGlobalRadix2_rest(int *__restrict__ vec, int *__restrict__ 
     }
 }
 
-template <uint n, typename ButterflyConfig = Radix2Butterfly>
+template <uint n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __global__ void stNttGlobalRadix2_first(int *__restrict__ vec, int *__restrict__ out, int mod) {
     extern __shared__ int firstShfls[];
 
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
-    const uint numBlocks = n >> (1 + log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
+    const uint numBlocks =
+        n >> (1 + cuda::log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
 
     uint idxVirtual = (blockIdx.x & (numBlocks - 1)) * blockDim.x + threadIdx.x;
 
-    int dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + idxVirtual;
+    int dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + idxVirtual;
 
     int reg[2];
 
@@ -76,14 +78,14 @@ __global__ void stNttGlobalRadix2_first(int *__restrict__ vec, int *__restrict__
     reg[1] = vec[dPos + (n >> 1)];
 
     // First butterfly
-    butterfly<ButterflyConfig>(reg, twiddle<n>(idxVirtual), mod);
+    cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>(idxVirtual), mod);
 
-    dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + (idxVirtual << 1);
+    dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + (idxVirtual << 1);
     out[dPos] = reg[0];
     out[dPos + 1] = reg[1];
 }
 
-template <uint n, typename ButterflyConfig = Radix2Butterfly>
+template <uint n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __host__ void sttNttGlobalRadix2(
     cuda::Buffer<int> &vec,
     cuda::Buffer<int> &doubleBuffer,
@@ -92,9 +94,9 @@ __host__ void sttNttGlobalRadix2(
     dim3 dimGrid,
     dim3 dimBlock,
     uint sharedMem) {
-    constexpr uint lN = log2_constexpr(n);
+    constexpr uint lN = cuda::log2_constexpr(n);
     const uint nPerBlock = n > dimBlock.x * 2 ? dimBlock.x * 2 : n;
-    const uint logNPerBlock = log2_uint(nPerBlock);
+    const uint logNPerBlock = cuda::log2_uint(nPerBlock);
     // At blockDim.x = 1024, nPerBlock is 2048 and last step is lN - 11 - 1 (-1 because the local kernel will do one
     // global access)
     const uint lastGlobalStep = (lN >= logNPerBlock) ? (lN - logNPerBlock) - 1 : 0u;

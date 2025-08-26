@@ -1,14 +1,13 @@
 #include "ntt/ntt_cpu.h"
 #include "ntt/ntt_util.h"
-#include "ntt/cuda/ntt_kernel.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
+#include "cuda/ntt/ntt_kernel.cuh"
 #include "util/io.h"
 #include "util/rng.h"
 #include "util/timer.h"
 #include "util/index_sequences.h"
 
 struct BenchStats {
-    cuda::NttArgs args;
+    cuda::ntt::NttArgs args;
     Timer::Duration gpuTime;
     // Time it takes to find root and mod
     Timer::Duration findParamsTime;
@@ -37,7 +36,7 @@ BenchStats runNttIteration(std::span<int> vec, uint maxBlockSize) {
     stats.findParamsTime = timer.stop();
 
     timer.start();
-    cuda::NttArgs args(vec.subspan(0, n * batches), n, batches, root, mod, 2, maxBlockSize);
+    cuda::ntt::NttArgs args(vec.subspan(0, n * batches), n, batches, root, mod, 2, maxBlockSize);
     stats.args = args;
 
     // auto k = cuda::chooseKernel<n>(args);
@@ -46,7 +45,7 @@ BenchStats runNttIteration(std::span<int> vec, uint maxBlockSize) {
 
     timer.start();
     // double gpuTime = cuda::ntt(k, args);
-    double gpuTime = cuda::autoNtt<n>(args);
+    double gpuTime = cuda::ntt::autoNtt<n>(args);
     stats.kernelWithInitTime = timer.stop();
     stats.gpuTime = Timer::Duration(gpuTime);
 
@@ -86,11 +85,11 @@ int main() {
     std::vector<int> gpuRes = vec;
     double gpuTime;
 
-    auto nRange = make_index_range<2, 28>();
+    auto nRange = make_index_range<2, 21>();
 
     std::vector<BenchStats> stats;
-    for (const auto maxBlockSize : cuda::defaultMaxBlockSizes) {
-        auto blockStats = runAll(gpuRes, 20, maxBlockSize, nRange);
+    for (const auto maxBlockSize : cuda::ntt::defaultMaxBlockSizes) {
+        auto blockStats = runAll(gpuRes, 5, maxBlockSize, nRange);
         stats.insert(stats.end(), blockStats.begin(), blockStats.end());
     }
 
@@ -106,7 +105,7 @@ int main() {
 }
 
 std::ostream& operator<<(std::ostream& os, const BenchStats& p) {
-    os << "N: " << p.args.n << " (2^" << log2_uint(p.args.n) << ")\n";
+    os << "N: " << p.args.n << " (2^" << cuda::log2_uint(p.args.n) << ")\n";
     os << "Block size:\t\t" << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z << "\n";
     os << "Kernel time:\t\t" << p.gpuTime << "\n";
     os << "findParams time:\t" << p.findParamsTime << "\n";
@@ -154,7 +153,7 @@ std::ostream& BenchStats::csvHeader(std::ostream& os) {
 
 std::ostream& toCsv(std::ostream& os, const BenchStats& p) {
     // clang-format off
-    return os << log2_uint(p.args.n)
+    return os << cuda::log2_uint(p.args.n)
         << sep << p.args.dimBlock.x * p.args.dimBlock.y * p.args.dimBlock.z
         << sep << p.gpuTime.count()
         << sep << p.findParamsTime.count()

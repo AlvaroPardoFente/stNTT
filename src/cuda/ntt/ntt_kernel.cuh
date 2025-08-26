@@ -1,31 +1,44 @@
 #pragma once
 
-#include "ntt/cuda/ntt_impl.h"
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
+#include "cuda/ntt/ntt_impl.h"
+#include "cuda/cu_util.cuh"
 
-#include "ntt/cuda/implementations/st_ntt_radix2.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix4.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix2_128.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix2_512.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix2_adaptive.cuh"
-#include "ntt/cuda/implementations/st_ntt_radix4_adaptive.cuh"
-// #include "ntt/cuda/implementations/st_ntt_global_radix2_4096.cuh"
-#include "ntt/cuda/implementations/st_ntt_global_radix2.cuh"
-#include "ntt/cuda/implementations/st_ntt_goldilocks.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix2.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix4.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix2_128.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix2_512.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix2_adaptive.cuh"
+#include "cuda/ntt/implementations/st_ntt_radix4_adaptive.cuh"
+// #include "cuda/ntt/implementations/st_ntt_global_radix2_4096.cuh"
+#include "cuda/ntt/implementations/st_ntt_global_radix2.cuh"
+#include "cuda/ntt/implementations/st_ntt_goldilocks.cuh"
 
 #include <cuda_profiler_api.h>
 
 #include <optional>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <span>
 
-namespace cuda {
+namespace cuda::ntt {
+constexpr uint defaultBlockSize = 1024;
 constexpr std::array<uint, 4> defaultBatchesNums = {1, 2, 5, 10};
 constexpr std::array<uint, 5> defaultMaxBlockSizes = {64, 128, 256, 512, 1024};
 
-__host__ struct NttArgs {
+using KernelArgs = std::tuple<dim3, dim3, uint>;
+__host__ __forceinline__ KernelArgs
+getNttKernelArgs(uint n, uint radix, uint batches, uint blockSize = cuda::ntt::defaultBlockSize) {
+    dim3 dimGrid{((n / radix) * batches + blockSize - 1) / blockSize};
+    dim3 dimBlock{std::min(n / radix, blockSize), std::max(std::min(blockSize / (n / radix), batches), 1u)};
+
+    uint stepsInWarp = log2(warpSizeConst * radix);
+    uint sharedMem = (log2(n) > stepsInWarp) ? std::min((n / 2), blockSize) * dimBlock.y * sizeof(int) : 0;
+
+    return {dimGrid, dimBlock, sharedMem};
+}
+
+struct NttArgs {
     uint n{};
     uint batches{};
     uint root{};
@@ -44,7 +57,7 @@ __host__ struct NttArgs {
     // This is needed to keep the args in the stats
     NttArgs() = default;
 
-    NttArgs(uint n, uint batches, uint root, uint mod, uint radix, uint blockSize = cuda::defaultBlockSize)
+    NttArgs(uint n, uint batches, uint root, uint mod, uint radix, uint blockSize = cuda::ntt::defaultBlockSize)
         : n(n), batches(batches), root(root), mod(mod), radix(radix), blockSize(blockSize) {
         initKernelArgs();
         if (n / radix > dimBlock.x)
@@ -58,60 +71,18 @@ __host__ struct NttArgs {
         uint root,
         uint mod,
         uint radix,
-        uint blockSize = cuda::defaultBlockSize)
+        uint blockSize = cuda::ntt::defaultBlockSize)
         : NttArgs(n, batches, root, mod, radix, blockSize) {
         this->vec = vec;
     }
 
     void initKernelArgs() {
-        std::tie(dimGrid, dimBlock, sharedMem) = cuda::getNttKernelArgs(n, radix, batches, blockSize);
+        std::tie(dimGrid, dimBlock, sharedMem) = getNttKernelArgs(n, radix, batches, blockSize);
     }
 };
 
-// struct KernelKey {
-//     uint n;
-//     uint batches;
-//     ntt::KernelId impl_id;
-
-//     auto operator<=>(const KernelKey &) const = default;
-// };
-
-// using KernelLauncher = std::function<void(int *, int)>;
-// using KernelMap = std::map<KernelKey, KernelLauncher>;
-
-// void registerAllKernels(KernelMap &kernels, std::span<const uint> batchesNums);
-
-// float stNtt(KernelMap &kernels, std::span<int> vec, uint n, uint batches, ntt::KernelId id, int root, int mod);
-__forceinline__ float
-stNtt(std::function<void(int* vec)> kernel, std::span<int> vec, uint n, uint batches, int root, int mod) {
-    float gpuTime;
-    cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
-
-    cuda::Buffer vecGPU(vec);
-
-    initTwiddles(n, root, mod);
-
-    cudaProfilerStart();
-    cudaEventRecord(start);
-    kernel(vecGPU.data());
-    CCErr(cudaGetLastError());
-    CCErr(cudaEventRecord(end));
-
-    CCErr(cudaProfilerStop());
-    CCErr(cudaEventSynchronize(end));
-    CCErr(cudaEventElapsedTime(&gpuTime, start, end));
-
-    CCErr(cudaDeviceSynchronize());
-
-    vecGPU.store(vec);
-
-    return gpuTime;
-}
-
 template <size_t n>
-auto chooseKernel(const cuda::NttArgs& args) {
+auto chooseKernel(const NttArgs& args) {
     if constexpr (n < (1 << 6)) {
         return [args](int* vec) { stNttRadix2<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod); };
     } else if constexpr (n < (1 << 12)) {
@@ -120,7 +91,7 @@ auto chooseKernel(const cuda::NttArgs& args) {
         };
     } else {
         return [args](cuda::Buffer<int>& vec, cuda::Buffer<int>& doubleBuffer) {
-            sttNttGlobalRadix2<n, Radix2Butterfly>(
+            sttNttGlobalRadix2<n, cuda::ntt::Radix2Butterfly>(
                 vec,
                 doubleBuffer,
                 args.batches,
@@ -143,7 +114,7 @@ concept DoubleBufferKernel = requires(T kernel, cuda::Buffer<int>& in, cuda::Buf
 
 template <typename KernelFunc>
     requires LocalKernel<KernelFunc> || GlobalKernel<KernelFunc> || DoubleBufferKernel<KernelFunc>
-__forceinline__ float ntt(KernelFunc kernel, cuda::NttArgs args) {
+__forceinline__ float stNtt(KernelFunc kernel, NttArgs args) {
     float gpuTime;
     cudaEvent_t start, end;
     cudaEventCreate(&start);
@@ -179,7 +150,7 @@ __forceinline__ float ntt(KernelFunc kernel, cuda::NttArgs args) {
 }
 
 template <size_t n>
-float autoNtt(cuda::NttArgs args) {
+float autoNtt(NttArgs args) {
     float gpuTime;
     cudaEvent_t start, end;
     cudaEventCreate(&start);
@@ -202,7 +173,7 @@ float autoNtt(cuda::NttArgs args) {
             stNttRadix2Adaptive<n><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vecGPU.data(), args.mod);
         }
     } else {
-        sttNttGlobalRadix2<n, Radix2Butterfly>(
+        sttNttGlobalRadix2<n, cuda::ntt::Radix2Butterfly>(
             vecGPU,
             doubleBuffer,
             args.batches,

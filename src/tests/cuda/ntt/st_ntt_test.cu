@@ -1,8 +1,7 @@
 #include "doctest.h"
 
-#include "ntt/cuda/ntt_impl.h"
-#include "ntt/cuda/ntt_kernel.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
+#include "cuda/ntt/ntt_impl.h"
+#include "cuda/ntt/ntt_kernel.cuh"
 #include "ntt/ntt_cpu.h"
 #include "ntt/ntt_util.h"
 #include "util/io.h"
@@ -26,7 +25,7 @@ void runNttIteration(std::span<int> vec, size_t batches, uint maxBlockSize) {
     nttStockham(cpuVec, n, root, mod, batches);
 
     std::vector<int> gpuVec{refSpan.begin(), refSpan.end()};
-    cuda::NttArgs args(gpuVec, n, batches, root, mod, 2, maxBlockSize);
+    cuda::ntt::NttArgs args(gpuVec, n, batches, root, mod, 2, maxBlockSize);
 
     // auto k = cuda::chooseKernel<n>(args);
     // auto k = [args](int *vec) {
@@ -34,8 +33,15 @@ void runNttIteration(std::span<int> vec, size_t batches, uint maxBlockSize) {
     // };
 
     // cuda::ntt(k, args);
-    cuda::autoNtt<n>(args);
-    CHECK(cpuVec == gpuVec);
+    cuda::ntt::autoNtt<n>(args);
+    CHECK_MESSAGE(
+        cpuVec == gpuVec,
+        "N: 2^",
+        std::to_string(I),
+        " | NUM_BATCHES: ",
+        batches,
+        " | BLOCK_SIZE: ",
+        args.blockSize);
 }
 template <size_t... I>
 void runAll(std::span<int> vec, size_t batches, uint maxBlockSize, std::index_sequence<I...>) {
@@ -46,10 +52,10 @@ TEST_CASE("stNttRadix2 for N[2^1:2^6]") {
     int minMod = 11;
     auto nRange = make_index_range<2, 7>();
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector((1 << 6) * cuda::defaultBatchesNums.back());
+    std::vector<int> vec = rng.get_vector((1 << 6) * cuda::ntt::defaultBatchesNums.back());
 
-    for (const auto batch : cuda::defaultBatchesNums) {
-        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+    for (const auto batch : cuda::ntt::defaultBatchesNums) {
+        for (const auto maxBlockSize : cuda::ntt::defaultMaxBlockSizes)
             runAll(vec, batch, maxBlockSize, nRange);
     }
 }
@@ -58,10 +64,10 @@ TEST_CASE("stNttRadix2Adaptive for N[2^7:2^11]") {
     int minMod = 11;
     auto nRange = make_index_range<7, 12>();
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector((1 << 11) * cuda::defaultBatchesNums.back());
+    std::vector<int> vec = rng.get_vector((1 << 11) * cuda::ntt::defaultBatchesNums.back());
 
-    for (const auto batch : cuda::defaultBatchesNums) {
-        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+    for (const auto batch : cuda::ntt::defaultBatchesNums) {
+        for (const auto maxBlockSize : cuda::ntt::defaultMaxBlockSizes)
             runAll(vec, batch, maxBlockSize, nRange);
     }
 }
@@ -70,26 +76,27 @@ TEST_CASE("stNttGlobalRadix2 for N[2^12:2^20]") {
     int minMod = 11;
     auto nRange = make_index_range<12, 21>();
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector((1 << 20) * cuda::defaultBatchesNums.back());
+    std::vector<int> vec = rng.get_vector((1 << 20) * cuda::ntt::defaultBatchesNums.back());
 
-    for (const auto batch : cuda::defaultBatchesNums) {
-        for (const auto maxBlockSize : cuda::defaultMaxBlockSizes)
+    for (const auto batch : cuda::ntt::defaultBatchesNums) {
+        for (const auto maxBlockSize : cuda::ntt::defaultMaxBlockSizes)
             runAll(vec, batch, maxBlockSize, nRange);
     }
 }
+
 TEST_CASE("stNttGlobalRadix2 for N[2^21:2^27]" * doctest::skip()) {
     int minMod = 11;
     auto nRange = make_index_range<21, 27>();
     util::Rng rng(util::Rng::defaultSeed);
-    std::vector<int> vec = rng.get_vector((1 << 26) * cuda::defaultBatchesNums.back());
+    std::vector<int> vec = rng.get_vector((1 << 26) * cuda::ntt::defaultBatchesNums.back());
 
     // This test is too slow to add both batches and block sizes
-    for (const auto batch : cuda::defaultBatchesNums) {
+    for (const auto batch : cuda::ntt::defaultBatchesNums) {
         runAll(vec, batch, 1024, nRange);
     }
 }
 
-TEST_CASE("findParams works for all tested Ns" * doctest::skip(false)) {
+TEST_CASE("findParams works for all tested Ns" * doctest::skip()) {
     size_t minMod = 11;
     size_t root = 0, mod = 0;
 

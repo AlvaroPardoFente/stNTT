@@ -61,7 +61,7 @@ SRCS := ntt/ntt_cpu.cpp ntt/ntt_util.cpp
 # Main
 SRCS += main.cu
 
-TEST_SRCS := src/test.cpp src/tests/ntt/cuda/st_ntt_test.cu
+TEST_SRCS := src/test.cpp src/tests/cuda/ntt/st_ntt_test.cu
 BENCH_SRCS := src/bench.cu
 
 .PHONY: all clean run test bench ptx

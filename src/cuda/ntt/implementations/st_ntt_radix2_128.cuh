@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 __global__ void stNttRadix2_128(int *__restrict__ vec, int mod) {
     // 2 buffers for the first shfl (w0 sends 2nd half to w1, w1 sends 1st half to w0)
@@ -23,7 +23,7 @@ __global__ void stNttRadix2_128(int *__restrict__ vec, int mod) {
     reg[1] = vec[dPos + (n >> 1)];
 
     // First butterfly
-    butterfly(reg, twiddles[threadIdx.x], mod);
+    cuda::ntt::butterfly(reg, twiddles[threadIdx.x], mod);
 
     // First shfl (shared memory)
     firstShfl[threadIdx.x + threadIdx.y * blockDim.x] = reg[wmask];
@@ -38,7 +38,7 @@ __global__ void stNttRadix2_128(int *__restrict__ vec, int mod) {
     uint idxVirtual = (idxInWarp << 1) + widx;
 
     // Second butterfly
-    butterfly(reg, twiddles[(idxVirtual >> 1) << 1], mod);
+    cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> 1) << 1], mod);
 
 #ifdef PRINT_STEPS_CUDA
     printfth(
@@ -91,7 +91,7 @@ __global__ void stNttRadix2_128(int *__restrict__ vec, int mod) {
         printff("\n");
 #endif
 
-        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
 
 #ifdef PRINT_STEPS_CUDA
         printfth(

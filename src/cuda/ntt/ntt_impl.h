@@ -2,6 +2,7 @@
 
 namespace ntt {
 // All cuda ntt implementation variants
+// TODO: UNUSED
 enum class KernelId : unsigned {
     stNttRadix2 = 1,
     stNttRadix2Adaptive = 2,

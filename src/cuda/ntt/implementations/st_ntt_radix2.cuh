@@ -1,12 +1,12 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 template <uint n>
 __global__ void stNttRadix2(int *__restrict__ vec, int mod) {
-    constexpr uint lN = log2_constexpr(n);
+    constexpr uint lN = cuda::log2_constexpr(n);
     constexpr uint N2 = (n >> 1);  // nthreads per NTT
     constexpr uint N4 = (n >> 2);
 
@@ -19,7 +19,7 @@ __global__ void stNttRadix2(int *__restrict__ vec, int mod) {
     reg[1] = vec[dPos + N2];
 
     // Size 2
-    butterfly(reg, twiddles[threadIdx.x], mod);
+    cuda::ntt::butterfly(reg, twiddles[threadIdx.x], mod);
 
     uint wgidx = (N2 * threadIdx.y & (warpSize - 1));  // Group index in warp
     uint gmask = ~(0xffffffff << N2) << wgidx;
@@ -40,7 +40,7 @@ __global__ void stNttRadix2(int *__restrict__ vec, int mod) {
         reg[0] = shfl_reg[swapidx];
         reg[1] = shfl_reg[swapidx + 2];
 
-        butterfly(reg, twiddles[(threadIdx.x >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(threadIdx.x >> step) * (1 << step)], mod);
 
         mask = mask << 1;
         cont++;

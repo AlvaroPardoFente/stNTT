@@ -1,7 +1,6 @@
 #include "ntt/ntt_cpu.h"
 #include "ntt/ntt_util.h"
-#include "ntt/cuda/ntt_kernel.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
+#include "cuda/ntt/ntt_kernel.cuh"
 #include "util/io.h"
 #include "util/rng.h"
 
@@ -42,12 +41,12 @@ int main() {
 
     // GPU
     try {
-        cuda::NttArgs args(gpuRes, vecSize, batches, root, mod, 2, 64);
+        cuda::ntt::NttArgs args(gpuRes, vecSize, batches, root, mod, 2, 64);
         // auto k = [args](int *vec) {
         //     stNttRadix2Adaptive<1 << 10><<<args.dimGrid, args.dimBlock, args.sharedMem>>>(vec, args.mod);
         // };
         // auto k = [args](cuda::Buffer<int> &vec, cuda::Buffer<int> &doubleBuffer) {
-        //     sttNttGlobalRadix2<1 << 27, Radix2Butterfly>(
+        //     sttNttGlobalRadix2<1 << 27,cuda::ntt::Radix2Butterfly>(
         //         vec,
         //         doubleBuffer,
         //         args.batches,
@@ -58,7 +57,7 @@ int main() {
         // };
         // auto k = cuda::chooseKernel<1 << 8>(args);
         // gpuTime = cuda::ntt(k, args);
-        gpuTime = cuda::autoNtt<1 << 20>(args);
+        gpuTime = cuda::ntt::autoNtt<1 << 22>(args);
     } catch (const std::out_of_range &e) {
         std::cerr << "Error: " << e.what() << "\n";
         std::cerr << "This may be due to an unsupported vector size or root/mod combination.\n";

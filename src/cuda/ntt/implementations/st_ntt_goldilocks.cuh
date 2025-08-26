@@ -1,26 +1,27 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 constexpr ulong mod = 18446744069414584321;
 constexpr ulong root = 6636018329409361715;
 
-template <ulong n, typename ButterflyConfig = Radix2Butterfly>
+template <ulong n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __global__ void stNttGoldilocksGlobal_first(int *__restrict__ vec, int *__restrict__ out, int mod) {
     extern __shared__ int firstShfls[];
 
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
-    const uint numBlocks = n >> (1 + log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
+    const uint numBlocks =
+        n >> (1 + cuda::log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
 
     uint idxVirtual = (blockIdx.x & (numBlocks - 1)) * blockDim.x + threadIdx.x;
 
-    uint dPos = ((static_cast<uint>(blockIdx.x) >> log2_uint(numBlocks)) * n) + idxVirtual;
+    uint dPos = ((static_cast<uint>(blockIdx.x) >> cuda::log2_uint(numBlocks)) * n) + idxVirtual;
 
     long reg[2];
 
@@ -28,22 +29,23 @@ __global__ void stNttGoldilocksGlobal_first(int *__restrict__ vec, int *__restri
     reg[1] = vec[dPos + (n >> 1)];
 
     // First butterfly
-    butterfly<ButterflyConfig>(reg, twiddle<n>(idxVirtual), mod);
+    cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>(idxVirtual), mod);
 
-    dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + (idxVirtual << 1);
+    dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + (idxVirtual << 1);
     out[dPos] = reg[0];
     out[dPos + 1] = reg[1];
 }
 
-template <ulong n, typename ButterflyConfig = Radix2Butterfly>
+template <ulong n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __global__ void stNttGoldiloksGlobal_rest(int *__restrict__ vec, int *__restrict__ out, int mod, uint step) {
     constexpr uint nPerBlock = n > 2048 ? 2048 : n;
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
-    const uint numBlocks = n >> (1 + log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
+    const uint numBlocks =
+        n >> (1 + cuda::log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
 
     long reg[2];
 
@@ -62,7 +64,7 @@ __global__ void stNttGoldiloksGlobal_rest(int *__restrict__ vec, int *__restrict
 #define threadStrideGoldilocksGlobal (warpStride * warpSizeConst)
     uint wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
-    uint dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + (idxInGroup << 1);
+    uint dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + (idxInGroup << 1);
 
     // The last virtual index in the shared memory steps is used in the warp shfl steps
     uint idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
@@ -71,10 +73,10 @@ __global__ void stNttGoldiloksGlobal_rest(int *__restrict__ vec, int *__restrict
     reg[1] = vec[dPos + wmask + !wmask * (int)threadStrideGoldilocksGlobal * 2];
 
     // First butterfly
-    butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
+    cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
 
-    if (false && step == lN - log2_uint(nPerBlock) - 1) {  // Final (for debugging)
-        dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + ((idxVirtual >> step) << (step + 1)) +
+    if (false && step == lN - cuda::log2_uint(nPerBlock) - 1) {  // Final (for debugging)
+        dPos = ((blockIdx.x >> cuda::log2_uint(numBlocks)) * n) + ((idxVirtual >> step) << (step + 1)) +
                (idxVirtual & ((1 << step) - 1));
         out[dPos] = reg[0];
         out[dPos + (1 << step)] = reg[1];
@@ -85,18 +87,19 @@ __global__ void stNttGoldiloksGlobal_rest(int *__restrict__ vec, int *__restrict
     }
 }
 
-template <ulong n, typename ButterflyConfig = Radix2Butterfly>
+template <ulong n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __global__ void stNttGoldilocksLocal(int *__restrict__ vec, int *__restrict__ out, int mod, uint step) {
     extern __shared__ int firstShfls[];
 
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
 
     constexpr uint lastSharedStep = (lN >= 6) ? (lN - 6) : 0u;  // lN = 6 => n = 64 => Operations can be intra-warp
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
-    const uint numBlocks = n >> (1 + log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
+    const uint numBlocks =
+        n >> (1 + cuda::log2_uint(blockDim.x));  // (n / 2) / blockDim (it is assumed all are powers of 2)
 
     uint idxInGroup = (blockIdx.x & (numBlocks - 1)) * blockDim.x + threadIdx.x;
 
@@ -117,7 +120,7 @@ __global__ void stNttGoldilocksLocal(int *__restrict__ vec, int *__restrict__ ou
 #define threadStrideGoldilocksLocal (warpStride * warpSizeConst)
     uint wmask = (widx / warpStride) & 1;  // 0 for first half, 1 for second half
 
-    uint dPos = ((static_cast<uint>(blockIdx.x) >> log2_uint(numBlocks)) * n) + (idxInGroup << 1);
+    uint dPos = ((static_cast<uint>(blockIdx.x) >> cuda::log2_uint(numBlocks)) * n) + (idxInGroup << 1);
 
     // The last virtual index in the shared memory steps is used in the warp shfl steps
     uint idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
@@ -126,7 +129,7 @@ __global__ void stNttGoldilocksLocal(int *__restrict__ vec, int *__restrict__ ou
     reg[1] = vec[dPos + wmask + !wmask * (int)threadStrideGoldilocksLocal * 2];
 
     // First butterfly
-    butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
+    cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
 
     // Formula for debugging: it stores all data unshuffled
     // dPos = ((blockIdx.x >> log2_uint(numBlocks)) * n) + ((idxVirtual >> step) << (step + 1)) +
@@ -154,7 +157,7 @@ __global__ void stNttGoldilocksLocal(int *__restrict__ vec, int *__restrict__ ou
             offset += wmask * mask;
             idxVirtual = ((idxInGroup << step) & (N2 - 1)) + offset;
 
-            butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
+            cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
 
             mask = mask << 1;
             cont++;
@@ -178,20 +181,20 @@ __global__ void stNttGoldilocksLocal(int *__restrict__ vec, int *__restrict__ ou
         reg[0] = shfl_reg[swapidx];
         reg[1] = shfl_reg[swapidx + 2];
 
-        butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
+        cuda::ntt::butterfly<ButterflyConfig>(reg, twiddle<n>((idxVirtual >> step) * (1 << step)), mod);
 
         mask = mask << 1;
         cont++;
     }
 
     // dPos is calculated again to account for interleaving
-    dPos = ((static_cast<uint>(blockIdx.x) >> log2_uint(numBlocks)) * n) + idxVirtual;
+    dPos = ((static_cast<uint>(blockIdx.x) >> cuda::log2_uint(numBlocks)) * n) + idxVirtual;
 
     out[dPos] = reg[0];
     out[dPos + (n >> 1)] = reg[1];
 }
 
-template <ulong n, typename ButterflyConfig = Radix2Butterfly>
+template <ulong n, typename ButterflyConfig = cuda::ntt::Radix2Butterfly>
 __host__ void sttNttGoldilocks(
     cuda::Buffer<int> &vec,
     cuda::Buffer<int> &doubleBuffer,
@@ -200,9 +203,9 @@ __host__ void sttNttGoldilocks(
     dim3 dimGrid,
     dim3 dimBlock,
     uint sharedMem) {
-    constexpr uint lN = log2_constexpr(n);
+    constexpr uint lN = cuda::log2_constexpr(n);
     const uint nPerBlock = n > dimBlock.x * 2 ? dimBlock.x * 2 : n;
-    const uint logNPerBlock = log2_uint(nPerBlock);
+    const uint logNPerBlock = cuda::log2_uint(nPerBlock);
     // At blockDim.x = 1024, nPerBlock is 2048 and last step is lN - 11 - 1 (-1 because the local kernel will do one
     // global access)
     const uint lastGlobalStep = (lN >= logNPerBlock) ? (lN - logNPerBlock) - 1 : 0u;

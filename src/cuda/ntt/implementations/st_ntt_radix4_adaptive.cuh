@@ -1,21 +1,21 @@
 #pragma once
 
-#include "ntt/cuda/cu_util.cuh"
-#include "ntt/cuda/cu_ntt_util.cuh"
-#include "ntt/cuda/implementations/common.cuh"
+#include "cuda/cu_util.cuh"
+#include "cuda/ntt/arithmetic.cuh"
+#include "cuda/ntt/implementations/common.cuh"
 
 template <uint n>
 __global__ void stNttRadix4Adaptive(int *__restrict__ vec, int mod) {
     extern __shared__ int firstShfls[];
 
-    constexpr uint lN = log2_constexpr(n);  // log2(N)
+    constexpr uint lN = cuda::log2_constexpr(n);  // log2(N)
     constexpr uint N2 = (n >> 1);
     constexpr uint N4 = (n >> 2);
 
     constexpr uint lastSharedStep = (lN >= 7) ? (lN - 7) : 1u;  // lN = 6 => n = 64 => Operations can be intra-warp
 
     constexpr uint numWarps = (N2 + warpSizeConst - 1) / warpSizeConst;  // Number of warps in the NTT
-    constexpr uint logNumWarps = log2_constexpr(numWarps);               // log2(numWarps)
+    constexpr uint logNumWarps = cuda::log2_constexpr(numWarps);         // log2(numWarps)
 
     int tidx = threadIdx.x;
     int tidx1 = tidx + N4;
@@ -32,8 +32,8 @@ __global__ void stNttRadix4Adaptive(int *__restrict__ vec, int mod) {
     reg[3] = vec[dPos1 + N2];
 
     // First butterfly
-    butterfly(reg, twiddles[tidx], mod);
-    butterfly(&reg[2], twiddles[tidx1], mod);
+    cuda::ntt::butterfly(reg, twiddles[tidx], mod);
+    cuda::ntt::butterfly(&reg[2], twiddles[tidx1], mod);
 
     // The last virtual index in the shared memory steps is used in the warp shfl steps
     uint idxVirtual = tidx;
@@ -45,8 +45,8 @@ __global__ void stNttRadix4Adaptive(int *__restrict__ vec, int mod) {
     idxVirtual = (tidx << 1) % N2;
     idxVirtual1 = (tidx1 << 1) % N2 + 1;
 
-    butterfly(reg, twiddles[(idxVirtual >> 1) * (1 << 1)], mod);
-    butterfly(&reg[2], twiddles[(idxVirtual1 >> 1) * (1 << 1)], mod);
+    cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> 1) * (1 << 1)], mod);
+    cuda::ntt::butterfly(&reg[2], twiddles[(idxVirtual1 >> 1) * (1 << 1)], mod);
 
     int mask = 2, cont = 1;
     if constexpr (lastSharedStep > 0) {
@@ -79,8 +79,8 @@ __global__ void stNttRadix4Adaptive(int *__restrict__ vec, int mod) {
             idxVirtual = ((tidx << step) % N2) + offset;
             idxVirtual1 = ((tidx1 << step) % N2) + offset + 1;
 
-            butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
-            butterfly(&reg[2], twiddles[(idxVirtual1 >> step) * (1 << step)], mod);
+            cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+            cuda::ntt::butterfly(&reg[2], twiddles[(idxVirtual1 >> step) * (1 << step)], mod);
 
             mask = mask << 1;
             cont++;
@@ -111,8 +111,8 @@ __global__ void stNttRadix4Adaptive(int *__restrict__ vec, int mod) {
         reg[2] = shfl_reg[swapidx1 + 4];
         reg[3] = shfl_reg[swapidx1 + 6];
 
-        butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
-        butterfly(&reg[2], twiddles[(idxVirtual1 >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(reg, twiddles[(idxVirtual >> step) * (1 << step)], mod);
+        cuda::ntt::butterfly(&reg[2], twiddles[(idxVirtual1 >> step) * (1 << step)], mod);
 
         mask = mask << 1;
         cont++;
